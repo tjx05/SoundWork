@@ -1,0 +1,15 @@
+# 忽略整个Data文件夹，里面所有东西都不上传
+Data/*
+seapker_checkpoints/*
+
+__pycache__/*
+*.pyc
+
+speaker_checkpoints/*
+
+record/*
+
+sound.ipynb
+
+
+
