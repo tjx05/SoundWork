@@ -3,6 +3,16 @@
 
 ## 项目结构
 SoundWork/
+├── app.py                      # Flask 入口
+├── templates/                  # 前端页面
+│   └── index.html
+│
+├── static/                     # 前端资源
+│   ├── css/
+│   └── js/
+│
+│  # ------------后端------------
+│
 ├── Data  # 数据集目录
 │   ├── CREMA-D
 │   └── TIMIT
