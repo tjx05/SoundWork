@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>会议语音智能解析系统</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="top-bar">
+    <h2><i class="fa fa-microphone"></i> 多人会议语音智能解析</h2>
+    <button class="lang-btn" id="langSwitch">中文 / EN</button>
+  </div>
+
+  <div class="wrap">
+    <!-- 左侧：说话人注册 -->
+    <div class="card">
+      <div class="card-title"><i class="fa fa-user-plus"></i> 说话人注册</div>
+      <div class="form-item">
+        <label>姓名</label>
+        <input type="text" id="userName" placeholder="输入姓名">
+      </div>
+      <div class="form-item">
+        <label>性别</label>
+        <select id="userGender">
+          <option>男</option>
+          <option>女</option>
+        </select>
+      </div>
+      <div class="form-item">
+        <label>年龄段</label>
+        <select id="userAge">
+          <option>青年</option>
+          <option>中年</option>
+          <option>老年</option>
+        </select>
+      </div>
+      <div class="form-item">
+        <label>上传声纹语音（可多选多条）</label>
+        <input type="file" id="spkAudioUp" accept="audio/*" multiple>
+        <div class="tip-text">推荐单条6-9s，或3条各2-3s短句录音</div>
+      </div>
+      <button class="btn" id="regBtn">注册入库</button>
+
+      <div class="card-title" style="margin-top:12px"><i class="fa fa-users"></i> 已注册/识别列表（双击修改）</div>
+      <div class="speaker-list" id="speakerList">
+        <!-- 动态渲染 -->
+      </div>
+    </div>
+
+    <!-- 中间：录音解析控制 -->
+    <div class="card">
+      <div class="card-title"><i class="fa fa-cogs"></i> 录音解析控制</div>
+      <div class="upload-box" id="uploadBox">
+        <i class="fa fa-upload"></i> 点击上传会议录音
+        <input type="file" id="audioFile" hidden accept="audio/*">
+      </div>
+      <div class="ctrl-row">
+        <button class="ctrl-btn btn-green" id="startRec">实时录音</button>
+        <button class="ctrl-btn btn-gray" id="pauseRec" disabled>暂停</button>
+        <button class="ctrl-btn btn-gray" id="stopRec" disabled>结束</button>
+      </div>
+
+      <div class="card-title"><i class="fa fa-comments"></i> 实时解析对话（双击修改文本/单条姓名）</div>
+      <div class="chat-box" id="chatBox">
+        等待开始解析...
+      </div>
+    </div>
+
+    <!-- 右侧：结构化会议日记 -->
+    <div class="card">
+      <div class="card-title"><i class="fa fa-file-text"></i> 结构化会议日记</div>
+      <div class="diary-box" id="diaryBox">
+        解析完成后自动生成会议记录
+      </div>
+      <button class="down-btn" id="downBtn" disabled>导出TXT记录</button>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
