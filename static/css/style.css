@@ -1,0 +1,246 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "Microsoft Yahei", sans-serif;
+  user-select: none;
+}
+
+body {
+  background-color: #f8faf9;
+  color: #333;
+  height: 100vh;
+  overflow: hidden;
+  padding: 12px;
+}
+
+:root {
+  --main: #67b99a;
+  --light: #e8f3ee;
+  --gray: #eef1f0;
+  --text: #555;
+  --border: #dde3e0;
+  --bubble-bg: #eef3ff;
+  --emotion-bg: #fff;
+}
+
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fff;
+  padding: 10px 16px;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  margin-bottom: 10px;
+}
+.top-bar h2 {
+  font-size: 18px;
+  color: var(--main);
+}
+.lang-btn {
+  border: 1px solid var(--border);
+  background: #fff;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.wrap {
+  display: grid;
+  grid-template-columns: 260px 1fr 300px;
+  gap: 10px;
+  height: calc(100vh - 70px);
+}
+
+.card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  padding: 14px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.card-title {
+  font-size: 15px;
+  margin-bottom: 10px;
+  color: var(--main);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-item {
+  margin-bottom: 8px;
+}
+.form-item label {
+  font-size: 13px;
+  color: var(--text);
+  display: block;
+  margin-bottom: 3px;
+}
+.form-item input,
+.form-item select {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 13px;
+  user-select: text;
+}
+.btn {
+  width: 100%;
+  padding: 7px;
+  border: none;
+  border-radius: 4px;
+  background: var(--main);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  margin-top: 5px;
+}
+
+.speaker-list {
+  flex: 1;
+  margin-top: 10px;
+  font-size: 12px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.speaker-item {
+  padding: 8px;
+  background: var(--light);
+  border-radius: 4px;
+  margin-bottom: 5px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+}
+.speaker-item:hover { background: #d9ebe3; }
+.speaker-item .name { font-weight: 600; }
+.speaker-item .meta { color: var(--text); }
+
+.tip-text {
+  font-size: 11px;
+  color: #999;
+  margin: 4px 0;
+  line-height: 1.4;
+}
+
+.ctrl-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ctrl-btn {
+  flex: 1;
+  padding: 7px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn-green { background: var(--main); color: #fff; }
+.btn-gray { background: var(--gray); color: #666; }
+
+.upload-box {
+  border: 1px dashed var(--border);
+  text-align: center;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.chat-box {
+  flex: 1;
+  background: var(--light);
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 13px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.chat-item {
+  margin-bottom: 14px;
+}
+.chat-top-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.chat-left-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.chat-name {
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.chat-name:hover { color: var(--main); }
+.chat-time {
+  font-size: 12px;
+  color: #999;
+}
+.chat-emotion {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 12px;
+  background: var(--emotion-bg);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+.chat-bubble {
+  background: var(--bubble-bg);
+  padding: 10px 14px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.chat-bubble:hover { background: #e3ebff; }
+.chat-bubble .text {
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.diary-box {
+  flex: 1;
+  background: var(--light);
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 12px;
+  white-space: pre-line;
+  min-height: 0;
+  overflow-y: auto;
+}
+.down-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px;
+  background: var(--main);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
