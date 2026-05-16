@@ -1,2 +1,2 @@
 # SoundWork
-语音信息处理大作业——语音合成
+whisper和audio_pyannote是调用和函数定义，可以直接用里面的函数来调用相应模型，audio_pyannote是用的token离线调用模型；pyannote_test_local是测试这个pyannote的调用是否成功，里面是本地调用，要先下载models再用，但目前也跑不通说是这个模型文件是指针形式不是真实文件。
