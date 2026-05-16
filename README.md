@@ -2,6 +2,7 @@
 语音信息处理大作业——语音合成
 
 ## 项目结构
+```
 SoundWork/
 ├── app.py                      # Flask 入口
 ├── templates/                  # 前端页面
@@ -51,6 +52,7 @@ SoundWork/
 ├── .gitignore
 ├── config.py
 └── README.md
+```
 
 ## 快速开始
 ```bash
