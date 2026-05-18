@@ -1,11 +1,13 @@
 # 忽略整个Data文件夹，里面所有东西都不上传
 Data/*
+data/*
 seapker_checkpoints/*
 
 __pycache__/*
 *.pyc
 
 speaker_checkpoints/*
+emotion_checkpoints/*
 
 record/*
 

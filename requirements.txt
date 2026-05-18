@@ -1,1 +1,4 @@
 transformers
+
+需要链接wav2vec2模型，要使用以下huggingface镜像源
+export HF_ENDPOINT=https://hf-mirror.com
