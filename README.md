@@ -14,6 +14,8 @@ SoundWork/
 │
 │  # ------------后端------------
 │
+├── app.py                    # 核心集成处理
+│
 ├── Data  # 数据集目录
 │   ├── CREMA-D
 │   └── TIMIT
@@ -59,4 +61,5 @@ SoundWork/
 # 1.安装依赖
 pip install -r requirements.txt
 
+```
 

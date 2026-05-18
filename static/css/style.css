@@ -103,6 +103,16 @@ body {
   font-size: 13px;
   margin-top: 5px;
 }
+.btn-primary {
+  background: #4a90e2;
+}
+.btn-primary:hover {
+  background: #3a7bc8;
+}
+.btn-primary:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
 
 .speaker-list {
   flex: 1;
@@ -156,6 +166,47 @@ body {
   font-size: 13px;
   margin-bottom: 10px;
   cursor: pointer;
+}
+.upload-box:hover {
+  border-color: var(--main);
+  background: var(--light);
+}
+
+.selected-file {
+  background: var(--light);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 进度条样式 */
+.progress-container {
+  margin-bottom: 10px;
+  background: var(--gray);
+  border-radius: 10px;
+  height: 30px;
+  position: relative;
+  overflow: hidden;
+}
+.progress-bar {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--main), #4a90e2);
+  border-radius: 10px;
+  transition: width 0.3s ease;
+}
+.progress-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  font-weight: bold;
+  color: #333;
 }
 
 .chat-box {
@@ -232,6 +283,10 @@ body {
   cursor: pointer;
   font-size: 13px;
 }
+.down-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
 
 ::-webkit-scrollbar {
   width: 8px;
@@ -243,4 +298,25 @@ body {
 }
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* 在原有样式基础上新增/调整 */
+/* 自定义toast提示的动画优化（如果需要） */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+.fa-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* 优化按钮禁用状态的样式 */
+.btn-green:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.ctrl-btn:disabled {
+  opacity: 0.7;
 }

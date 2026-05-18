@@ -1,13 +1,11 @@
 // ========== 全局变量 ==========
 let speakerList = [];
 let parseData = [];
-let unknownCounter = {
-  "青年女": 0, "青年男": 0,
-  "中年女": 0, "中年男": 0,
-  "老年女": 0, "老年男": 0
-};
-let currentTimeoutIds = [];
-let isParsing = false;
+let mediaRecorder = null;
+let isRecording = false;
+let audioChunks = [];
+let selectedAudioFile = null;  // 存储选中的文件
+let isParsing = false; // 新增：标记是否正在解析
 
 // DOM 元素
 const langSwitch = document.getElementById('langSwitch');
@@ -21,6 +19,9 @@ const startRec = document.getElementById('startRec');
 const pauseRec = document.getElementById('pauseRec');
 const stopRec = document.getElementById('stopRec');
 const downBtn = document.getElementById('downBtn');
+const startParseBtn = document.getElementById('startParseBtn');
+const selectedFileDiv = document.getElementById('selectedFile');
+const fileNameSpan = document.getElementById('fileName');
 
 // ========== 辅助函数 ==========
 function escapeHtml(str) {
@@ -38,7 +39,7 @@ function generateDiary() {
   let txt = '【多人会议结构化日记】\n';
   txt += '——————————————\n';
   parseData.forEach(d => {
-    txt += `[${d.time}] ${d.person}（${d.mood} ${d.level}）：${d.text}\n`;
+    txt += `[${d.time}] ${d.person}：${d.text}\n`;
   });
   diaryBox.innerText = txt;
   diaryBox.scrollTop = diaryBox.scrollHeight;
@@ -54,7 +55,6 @@ function renderSpeaker() {
     div.innerHTML = `
       <div>
         <span class="name">${escapeHtml(item.name)}</span>
-        <span class="meta">（${item.gender}·${item.age}）</span>
       </div>
       <span class="auto-tag">${item.isReg ? '已注册' : '自动识别'}</span>
     `;
@@ -77,35 +77,41 @@ async function loadSpeakers() {
   }
 }
 
-/// 编辑说话人（全局）
-function editSpeakerGlobal(id) {
+// 编辑说话人
+async function editSpeakerGlobal(id) {
   const sp = speakerList.find(s => s.id === id);
   if (!sp) return;
   
   const oldName = sp.name;
   const newName = prompt('修改姓名：', sp.name);
   if (!newName) return;
-  const newGender = prompt('修改性别（男/女）：', sp.gender);
-  if (!newGender || !['男', '女'].includes(newGender)) return alert('性别只能填 男 / 女');
-  const newAge = prompt('修改年龄段（青年/中年/老年）：', sp.age);
-  if (!newAge || !['青年', '中年', '老年'].includes(newAge)) return alert('年龄段只能填 青年/中年/老年');
-
-  // 更新speakerList
-  sp.name = newName;
-  sp.gender = newGender;
-  sp.age = newAge;
   
-  // 更新左侧列表显示
-  renderSpeaker();
-
-  // 更新parseData中所有匹配的姓名
-  parseData.forEach(d => {
-    if (d.person === oldName) {
-      d.person = newName;
+  // 调用后端接口同步
+  try {
+    const response = await fetch('/api/rename_speaker', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ old_name: oldName, new_name: newName })
+    });
+    const data = await response.json();
+    if (!data.success) {
+      alert('修改失败: ' + data.message);
+      return;
     }
+  } catch (err) {
+    alert('网络错误: ' + err.message);
+    return;
+  }
+  
+  // 更新前端数据（与原来一样）
+  sp.name = newName;
+  renderSpeaker();
+  
+  parseData.forEach(d => {
+    if (d.person === oldName) d.person = newName;
   });
-
-  // 🔥 关键修复：更新右侧chatBox中所有显示该姓名的DOM元素
+  
+  // 更新 DOM
   const chatItems = chatBox.querySelectorAll('.chat-item');
   chatItems.forEach((item, idx) => {
     if (idx < parseData.length && parseData[idx].person === newName) {
@@ -116,54 +122,8 @@ function editSpeakerGlobal(id) {
       }
     }
   });
-
-  // 重新生成日记
+  
   generateDiary();
-}
-
-// 替换未知说话人
-function replaceUnknownSpeaker(gender, age, newName) {
-  const key = `${age}${gender}`;
-  const modifiedIndices = [];
-
-  parseData.forEach((d, idx) => {
-    if (d.person.includes(key)) {
-      d.person = newName;
-      modifiedIndices.push(idx);
-    }
-  });
-
-  const chatItems = chatBox.querySelectorAll('.chat-item');
-  modifiedIndices.forEach(idx => {
-    if (chatItems[idx]) {
-      const nameSpan = chatItems[idx].querySelector('.chat-name');
-      nameSpan.textContent = newName;
-      nameSpan.ondblclick = () => editChatName(idx);
-    }
-  });
-
-  renderSpeaker();
-  generateDiary();
-}
-
-// 生成临时名字
-function getUnknownName(gender, age) {
-  const key = `${age}${gender}`;
-  unknownCounter[key] = (unknownCounter[key] || 0) + 1;
-  const tempName = `${age}${gender}${unknownCounter[key]}`;
-
-  const has = speakerList.some(s => s.name === tempName);
-  if (!has) {
-    speakerList.push({
-      id: Date.now() + Math.random(),
-      name: tempName,
-      gender: gender,
-      age: age,
-      isReg: false
-    });
-    renderSpeaker();
-  }
-  return tempName;
 }
 
 // 添加单条对话
@@ -188,17 +148,28 @@ function addChatItem(d, index) {
 
 // 添加对话
 function addChat(time, person, mood, level, text) {
-  const newItem = { time, person, mood, level, text };
-  parseData.push(newItem);
-  addChatItem(newItem, parseData.length - 1);
+  parseData.push({ time, person, mood, level, text });
+  addChatItem(parseData[parseData.length - 1], parseData.length - 1);
   generateDiary();
+}
+
+// 批量添加对话
+function addChats(segments) {
+  parseData = [];
+  chatBox.innerHTML = '';
+  
+  for (const seg of segments) {
+    addChat(seg.time, seg.person, seg.mood, seg.level, seg.text);
+  }
+  generateDiary();
+  downBtn.disabled = false;
 }
 
 // 编辑对话姓名
 window.editChatName = function(idx) {
   const oldName = parseData[idx].person;
   const newName = prompt('修改本条说话人姓名：', oldName);
-  if (!newName) return;
+  if (!newName || newName === oldName) return;
 
   parseData[idx].person = newName;
 
@@ -260,20 +231,111 @@ window.editChatText = function(idx, bubbleEl) {
   textarea.select();
 }
 
+// 禁用/启用录音控制按钮
+function setRecordBtnStatus(disabled) {
+  startRec.disabled = disabled;
+  pauseRec.disabled = disabled ? true : pauseRec.disabled;
+  stopRec.disabled = disabled ? true : stopRec.disabled;
+}
+
+// 执行解析
+async function parseAudio() {
+  if (!selectedAudioFile || isParsing) {
+    alert('请先上传音频文件');
+    return;
+  }
+
+  // 标记正在解析
+  isParsing = true;
+  // 禁用开始解析按钮
+  startParseBtn.disabled = true;
+  // 禁用录音控制按钮
+  setRecordBtnStatus(true);
+  // 修改按钮文字显示加载状态
+  startParseBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> 解析中...';
+  
+  // 在对话和日记区域显示解析中状态
+  chatBox.innerHTML = '<div style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-spinner fa-spin"></i> 正在解析音频，请稍候...</div>';
+  diaryBox.innerHTML = '<div style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-spinner fa-spin"></i> 正在生成会议记录，请稍候...</div>';
+
+  const formData = new FormData();
+  formData.append('audio', selectedAudioFile);
+
+  try {
+    const response = await fetch('/api/recognize', { method: 'POST', body: formData });
+    const data = await response.json();
+    
+    if (data.success && data.segments) {
+      // 解析成功，渲染数据
+      addChats(data.segments);
+      // 自定义友好提示（替换系统alert）
+      showCustomToast(`解析完成！共识别 ${data.segments.length} 段对话`);
+    } else {
+      chatBox.innerHTML = '<div style="text-align:center; color:#ff6b6b; padding:20px;"><i class="fa fa-exclamation-circle"></i> 解析失败：' + (data.message || '未知错误') + '</div>';
+      diaryBox.innerHTML = '<div style="text-align:center; color:#ff6b6b; padding:20px;"><i class="fa fa-exclamation-circle"></i> 解析失败，请重试</div>';
+      showCustomToast('❌ 解析失败：' + (data.message || '未知错误'), 'error');
+    }
+  } catch (err) {
+    chatBox.innerHTML = '<div style="text-align:center; color:#ff6b6b; padding:20px;"><i class="fa fa-exclamation-circle"></i> 解析失败：' + err.message + '</div>';
+    diaryBox.innerHTML = '<div style="text-align:center; color:#ff6b6b; padding:20px;"><i class="fa fa-exclamation-circle"></i> 解析失败，请检查网络</div>';
+    showCustomToast('❌ 解析失败：' + err.message, 'error');
+  } finally {
+    // 恢复状态
+    isParsing = false;
+    startParseBtn.disabled = false;
+    startParseBtn.innerHTML = '<i class="fa fa-play"></i> 开始解析';
+    setRecordBtnStatus(false);
+  }
+}
+
+// 自定义友好提示框（替换系统alert）
+function showCustomToast(message, type = 'success') {
+  // 创建提示框DOM
+  const toast = document.createElement('div');
+  toast.style.position = 'fixed';
+  toast.style.top = '20px';
+  toast.style.left = '50%';
+  toast.style.transform = 'translateX(-50%)';
+  toast.style.padding = '12px 24px';
+  toast.style.borderRadius = '8px';
+  toast.style.backgroundColor = type === 'success' ? '#67b99a' : '#ff6b6b';
+  toast.style.color = '#fff';
+  toast.style.fontSize = '14px';
+  toast.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
+  toast.style.zIndex = '9999';
+  toast.style.opacity = '0';
+  toast.style.transition = 'opacity 0.3s ease, top 0.3s ease';
+  toast.innerHTML = `<i class="fa ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i> ${message}`;
+  
+  // 添加到页面
+  document.body.appendChild(toast);
+  
+  // 显示动画
+  setTimeout(() => {
+    toast.style.opacity = '1';
+    toast.style.top = '30px';
+  }, 10);
+  
+  // 3秒后隐藏并移除
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.top = '20px';
+    setTimeout(() => {
+      document.body.removeChild(toast);
+    }, 300);
+  }, 3000);
+}
+
 // 注册说话人
 regBtn.onclick = async function() {
   const name = document.getElementById('userName').value.trim();
-  const gender = document.getElementById('userGender').value;
-  const age = document.getElementById('userAge').value;
   const files = document.getElementById('spkAudioUp').files;
 
-  if (!name) return alert('请输入姓名');
-  if (files.length === 0) return alert('请上传声纹语音');
+  if (!name) return showCustomToast('请输入姓名', 'error');
+  if (files.length === 0) return showCustomToast('请上传声纹语音', 'error');
 
   const formData = new FormData();
   formData.append('name', name);
-  formData.append('gender', gender);
-  formData.append('age', age);
   for (let i = 0; i < files.length; i++) {
     formData.append('audios', files[i]);
   }
@@ -282,110 +344,107 @@ regBtn.onclick = async function() {
     const response = await fetch('/api/speakers', { method: 'POST', body: formData });
     const data = await response.json();
     if (data.success) {
-      alert(data.message);
+      showCustomToast(data.message);
       document.getElementById('userName').value = '';
       document.getElementById('spkAudioUp').value = '';
-      loadSpeakers();
-      replaceUnknownSpeaker(gender, age, name);
+      await loadSpeakers();
     } else {
-      alert('注册失败: ' + data.message);
+      showCustomToast('注册失败: ' + data.message, 'error');
     }
   } catch (err) {
-    alert('网络错误: ' + err.message);
+    showCustomToast('网络错误: ' + err.message, 'error');
   }
 }
 
-// 上传录音识别
+// 上传录音 - 只选择文件，不立即解析
 uploadBox.onclick = () => audioFile.click();
-audioFile.onchange = async function(e) {
+audioFile.onchange = function(e) {
   if (!e.target.files[0]) return;
-  uploadBox.innerHTML = `<i class="fa fa-music"></i> 已选择：${e.target.files[0].name}`;
+  
+  selectedAudioFile = e.target.files[0];
+  // 不再显示选中文件的小区域，只修改上传框提示
+  uploadBox.innerHTML = `<i class="fa fa-check-circle"></i> 已选择文件：${selectedAudioFile.name}<br><small>点击"开始解析"按钮开始处理</small>`;
+  startParseBtn.disabled = false;
+}
 
-  const formData = new FormData();
-  formData.append('audio', e.target.files[0]);
+// 开始解析按钮
+startParseBtn.onclick = parseAudio;
 
+// 实时录音
+async function startRecording() {
   try {
-    const response = await fetch('/api/recognize', { method: 'POST', body: formData });
-    const data = await response.json();
-    if (data.success && data.segments) {
-      parseData = [];
-      chatBox.innerHTML = '';
-      unknownCounter = {
-        "青年女": 0, "青年男": 0,
-        "中年女": 0, "中年男": 0,
-        "老年女": 0, "老年男": 0
-      };
-      speakerList = speakerList.filter(s => s.isReg === true);
-      for (const seg of data.segments) {
-        let person = seg.person;
-        // 自动识别未注册说话人
-        if (person !== '张三' && !speakerList.some(s => s.name === person)) {
-          // 简单规则：从名称推断性别年龄
-          let gender = '男', age = '青年';
-          if (person.includes('女')) gender = '女';
-          if (person.includes('中年')) age = '中年';
-          if (person.includes('老年')) age = '老年';
-          person = getUnknownName(gender, age);
-        }
-        addChat(seg.time, person, seg.mood, seg.level, seg.text);
-      }
-      downBtn.disabled = false;
-      generateDiary();
-    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+    
+    mediaRecorder.ondataavailable = (event) => {
+      audioChunks.push(event.data);
+    };
+    
+    mediaRecorder.onstop = async () => {
+      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+      selectedAudioFile = new File([audioBlob], 'recording.wav', { type: 'audio/wav' });
+      
+      stream.getTracks().forEach(track => track.stop());
+      
+      // 自动开始解析
+      await parseAudio();
+    };
+    
+    mediaRecorder.start();
+    isRecording = true;
+    chatBox.innerHTML = '<div style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-microphone"></i> 正在录音...</div>';
+    diaryBox.innerHTML = '<div style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-microphone"></i> 录音中，结束后自动解析...</div>';
   } catch (err) {
-    alert('识别失败: ' + err.message);
+    showCustomToast('无法访问麦克风: ' + err.message, 'error');
+    return false;
+  }
+  return true;
+}
+
+function stopRecording() {
+  if (mediaRecorder && isRecording) {
+    mediaRecorder.stop();
+    isRecording = false;
   }
 }
 
-// 实时录音（模拟数据）
-startRec.onclick = function() {
-  currentTimeoutIds.forEach(id => clearTimeout(id));
-  currentTimeoutIds = [];
-
+startRec.onclick = async function() {
+  if (isRecording || isParsing) {
+    showCustomToast(isParsing ? '当前正在解析音频，请稍后再试' : '已在录音中', 'error');
+    return;
+  }
+  
+  parseData = [];
+  chatBox.innerHTML = '';
+  diaryBox.innerText = '';
+  downBtn.disabled = true;
+  startParseBtn.disabled = true;
+  
   startRec.disabled = true;
   pauseRec.disabled = false;
   stopRec.disabled = false;
-  downBtn.disabled = true;
-
-  parseData = [];
-  chatBox.innerHTML = '';
-  diaryBox.innerText = '正在解析中...\n';
-  unknownCounter = {
-    "青年女": 0, "青年男": 0,
-    "中年女": 0, "中年男": 0,
-    "老年女": 0, "老年男": 0
-  };
-  speakerList = speakerList.filter(s => s.isReg === true);
-  renderSpeaker();
-
-  // 模拟解析数据
-  const timers = [
-    setTimeout(() => addChat('00:05', '张三', '开心', 'HI', '我们对齐一下本周项目进度'), 300),
-    setTimeout(() => addChat('00:13', getUnknownName('女', '青年'), '平静', 'LO', '前端界面已全部开发完成'), 800),
-    setTimeout(() => addChat('00:20', getUnknownName('女', '青年'), '开心→失落', 'MID', '进度还行，就是早上没来得及吃饭'), 1300),
-    setTimeout(() => addChat('00:28', '张三', '理解', 'LO', '没事，先把语音解析模块联调完'), 1800),
-    setTimeout(() => addChat('00:35', getUnknownName('男', '青年'), '严肃', 'MID', '后端接口我这边已经调试完毕'), 2300),
-    setTimeout(() => addChat('00:42', getUnknownName('女', '中年'), '温和', 'LO', '那我们定一下下周联调时间'), 2800),
-    setTimeout(() => addChat('00:50', '张三', '果断', 'HI', '那就下周二下午统一联调'), 3300),
-    setTimeout(() => addChat('00:58', getUnknownName('男', '中年'), '认真', 'MID', '我这边提前准备好测试用例'), 3800),
-    setTimeout(() => addChat('01:05', getUnknownName('女', '青年'), '轻松', 'LO', '好的，我也同步准备页面'), 4300),
-    setTimeout(() => addChat('01:12', '张三', '总结', 'HI', '大家各自准备，周二准时对接'), 4800)
-  ];
-  currentTimeoutIds = timers;
+  
+  await startRecording();
 }
 
 pauseRec.onclick = function() {
-  alert('暂停功能（模拟）');
+  if (mediaRecorder && isRecording) {
+    mediaRecorder.pause();
+    pauseRec.disabled = true;
+    startRec.disabled = false;
+    chatBox.innerHTML = '<div style="text-align:center; color:#999; padding:20px;"><i class="fa fa-pause-circle"></i> 录音已暂停</div>';
+    showCustomToast('录音已暂停');
+  }
 }
 
 stopRec.onclick = function() {
-  currentTimeoutIds.forEach(id => clearTimeout(id));
-  currentTimeoutIds = [];
+  if (mediaRecorder && isRecording) {
+    stopRecording();
+  }
   startRec.disabled = false;
   pauseRec.disabled = true;
   stopRec.disabled = true;
-  downBtn.disabled = false;
-  generateDiary();
 }
 
 // 导出TXT

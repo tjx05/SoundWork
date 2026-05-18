@@ -52,10 +52,27 @@
     <!-- 中间：录音解析控制 -->
     <div class="card">
       <div class="card-title"><i class="fa fa-cogs"></i> 录音解析控制</div>
+      
+      <!-- 上传区域 -->
       <div class="upload-box" id="uploadBox">
-        <i class="fa fa-upload"></i> 点击上传会议录音
+        <i class="fa fa-upload"></i> 点击或拖拽上传会议录音<br>
+        <small>支持 WAV/MP3 格式</small>
         <input type="file" id="audioFile" hidden accept="audio/*">
       </div>
+      
+      <!-- 隐藏选中文件显示区域 -->
+      <div class="selected-file" id="selectedFile" style="display: none;">
+        <i class="fa fa-file-audio-o"></i> 已选择: <span id="fileName"></span>
+      </div>
+      
+      <!-- 开始解析按钮 - 修改class为btn-green，和实时录音按钮样式一致 -->
+      <button class="btn btn-green" id="startParseBtn" style="margin-bottom: 10px;" disabled>
+        <i class="fa fa-play"></i> 开始解析
+      </button>
+      
+      <!-- 移除进度条相关DOM -->
+      
+      <!-- 实时录音控制 -->
       <div class="ctrl-row">
         <button class="ctrl-btn btn-green" id="startRec">实时录音</button>
         <button class="ctrl-btn btn-gray" id="pauseRec" disabled>暂停</button>
