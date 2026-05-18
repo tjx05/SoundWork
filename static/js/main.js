@@ -78,25 +78,40 @@ async function loadSpeakers() {
 }
 
 // 编辑说话人
-function editSpeakerGlobal(id) {
+async function editSpeakerGlobal(id) {
   const sp = speakerList.find(s => s.id === id);
   if (!sp) return;
   
   const oldName = sp.name;
   const newName = prompt('修改姓名：', sp.name);
-  if (!newName || newName === sp.name) return;
-
+  if (!newName) return;
+  
+  // 调用后端接口同步
+  try {
+    const response = await fetch('/api/rename_speaker', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ old_name: oldName, new_name: newName })
+    });
+    const data = await response.json();
+    if (!data.success) {
+      alert('修改失败: ' + data.message);
+      return;
+    }
+  } catch (err) {
+    alert('网络错误: ' + err.message);
+    return;
+  }
+  
+  // 更新前端数据（与原来一样）
   sp.name = newName;
   renderSpeaker();
-
-  // 更新parseData中所有匹配的姓名
+  
   parseData.forEach(d => {
-    if (d.person === oldName) {
-      d.person = newName;
-    }
+    if (d.person === oldName) d.person = newName;
   });
-
-  // 更新右侧显示
+  
+  // 更新 DOM
   const chatItems = chatBox.querySelectorAll('.chat-item');
   chatItems.forEach((item, idx) => {
     if (idx < parseData.length && parseData[idx].person === newName) {
@@ -107,7 +122,7 @@ function editSpeakerGlobal(id) {
       }
     }
   });
-
+  
   generateDiary();
 }
 

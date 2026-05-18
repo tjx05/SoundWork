@@ -86,7 +86,7 @@ def recognize_audio():
     if not file:
         return jsonify({"success": False,"message": "请上传音频文件"})
 
-    filename=f"{uuid.uuid4().hex}.wav"
+    filename=f"temp.wav"
     path=os.path.join(UPLOAD_FOLDER,filename)
     file.save(path)
 
@@ -112,6 +112,33 @@ def recognize_audio():
         # 清理临时文件
         if os.path.exists(path):
             os.remove(path)
+
+
+@app.route('/api/rename_speaker', methods=['POST'])
+def rename_speaker():
+    """重命名说话人（同步后端）"""
+    data = request.json
+    old_name = data.get('old_name')
+    new_name = data.get('new_name')
+    
+    if not old_name or not new_name:
+        return jsonify({"success": False, "message": "参数错误"})
+    
+    # 1. 更新 recognizer 的 database
+    if old_name in diary.recognizer.database:
+        diary.recognizer.database[new_name] = diary.recognizer.database.pop(old_name)
+        
+        # 更新磁盘上的 .npy 文件
+        old_path = os.path.join(diary.recognizer.db_path, f"{old_name}.npy")
+        new_path = os.path.join(diary.recognizer.db_path, f"{new_name}.npy")
+        if os.path.exists(old_path):
+            os.rename(old_path, new_path)
+    
+    # 2. 更新 speakers_db（额外信息）
+    if old_name in speakers_db:
+        speakers_db[new_name] = speakers_db.pop(old_name)
+    
+    return jsonify({"success": True, "message": f"{old_name} 已改名为 {new_name}"})
 
 
 @app.route('/api/parse/start', methods=['POST'])
