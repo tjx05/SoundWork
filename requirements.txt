@@ -1,5 +1,5 @@
 transformers
 openai-whisper
 
-需要链接wav2vec2模型，要使用以下huggingface镜像源
-export HF_ENDPOINT=https://hf-mirror.com
+需要下载wav2vec2模型
+运行 python download_model.py
