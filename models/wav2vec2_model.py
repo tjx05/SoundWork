@@ -8,7 +8,7 @@ class Wav2vec2MultiTaskModel(nn.Module):
     输入: 原始的 1D 语音波形 (采样率必须为 16kHz)
     输出: 情绪(6类)、性别(2类)、年龄(3类)
     """
-    def __init__(self, model_name="facebook/wav2vec2-base", num_emotion=6, num_gender=2, num_age=3):
+    def __init__(self, model_name="./local_base_model/wav2vec2-base", num_emotion=6, num_gender=2, num_age=3):
         super(Wav2vec2MultiTaskModel, self).__init__()
         
         print(f"正在从 HuggingFace 加载预训练基座: {model_name} ...")

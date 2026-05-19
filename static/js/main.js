@@ -39,7 +39,7 @@ function generateDiary() {
   let txt = '【多人会议结构化日记】\n';
   txt += '——————————————\n';
   parseData.forEach(d => {
-    txt += `[${d.time}] ${d.person}：${d.text}\n`;
+    txt += `[${d.time}] ${d.person} [${d.mood}]：${d.text}\n`;
   });
   diaryBox.innerText = txt;
   diaryBox.scrollTop = diaryBox.scrollHeight;

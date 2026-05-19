@@ -28,7 +28,7 @@ class Wav2vec2Recognizer:
         
         # 1. 实例化网络结构 (必须与训练时一致)
         # 注意：第一次运行推理也会检测一下 huggingface 缓存，但不会重新下载
-        self.model = Wav2vec2MultiTaskModel(model_name="facebook/wav2vec2-base")
+        self.model = Wav2vec2MultiTaskModel(model_name="./local_base_model/wav2vec2-base")
         
         # 2. 加载训练好的巅峰权重
         if not os.path.exists(model_path):
@@ -93,8 +93,7 @@ class Wav2vec2Recognizer:
         return result
 
 if __name__ == "__main__":
-    # ======== 推理测试 ========
-    # 我们拿上次那条测试过的“厌恶”语音再测一次
+    
     test_audio = "./data/raw/AudioWAV/1001_DFA_DIS_XX.wav" 
     
     try:

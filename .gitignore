@@ -8,6 +8,11 @@ __pycache__/*
 
 speaker_checkpoints/*
 emotion_checkpoints/*
+local_base_model/*
+ffmpeg-7.0.2-amd64-static/*
+8p(1).wav
+ffmpeg-release-amd64-static.tar.xz
+test_8p.py
 
 record/*
 

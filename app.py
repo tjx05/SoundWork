@@ -6,15 +6,20 @@ import wave
 import json
 
 from main import MeetingDiary
+from recognition.wav2vec2_reco import Wav2vec2Recognizer
 
 app=Flask(__name__)
 UPLOAD_FOLDER='uploads'
 os.makedirs(UPLOAD_FOLDER,exist_ok=True)
 os.makedirs("temp",exist_ok=True)  # 用于存放临时音频片段
 
+print("加载大模型...")
+ai_model = Wav2vec2Recognizer(model_path="emotion_checkpoints/best_wav2vec2_model.pth")
+
 # 初始化日记系统（只加载一次）
 print("初始化会议日记系统...")
-diary=MeetingDiary()
+# 把大模型传进去
+diary=MeetingDiary(emotion_recognizer=ai_model)
 print("初始化完成")
 
 # 存储注册说话人的额外信息（性别、年龄）
@@ -96,11 +101,17 @@ def recognize_audio():
         # 转换为前端需要的格式
         segments=[]
         for r in results:
+            # === 修改 3：把性别和年龄拼到名字后面给前端展示 ===
+            # 例如展示为 "张三 (中年·男)"
+            display_name = r['speaker']
+            if 'gender' in r and 'age' in r:
+                display_name = f"{r['speaker']} ({r['age']}·{r['gender']})"
+
             segments.append({
-                "time": f"{int(r['start']//60):02d}:{int(r['start']%60):02d}",  # 转换为 mm:ss 格式
-                "person": r['speaker'],
-                "mood": r['emotion'],
-                "level": "MID",  # 情感强度暂用 MID
+                "time": f"{int(r['start']//60):02d}:{int(r['start']%60):02d}", 
+                "person": display_name,   # 用带标签的名字
+                "mood": r['emotion'],     # 这里现在是你大模型跑出的真实情感了！
+                "level": "MID", 
                 "text": r['text']
             })
         return jsonify({"success": True,"segments": segments})

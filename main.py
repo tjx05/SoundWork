@@ -7,7 +7,7 @@ from recognition.speaker_reco import SpeakerRecognizer
 from config import config
 
 class MeetingDiary:
-    def __init__(self):
+    def __init__(self, emotion_recognizer=None):
         print("初始化...")
         self.recognizer=SpeakerRecognizer(
             model_path="speaker_checkpoints/best_model.pth",
@@ -21,6 +21,8 @@ class MeetingDiary:
         # )
         self.asr=WhisperASR("base")
         self.sr=config.sr
+        # 把你的大模型存入实例中
+        self.emotion_recognizer = emotion_recognizer
     
     def extract_segment(self,audio_path,start,end):
         """提取音频片段并保存为临时文件"""
@@ -90,6 +92,18 @@ class MeetingDiary:
             else:
                 speaker=name
                 print(f"  [{start:.1f}s-{end:.1f}s] {speaker} (相似度 {score:.4f})")
+
+            # === 修改 2：顺手把临时音频喂给你的大模型测情感 ===
+            emo, gen, age = "neutral", "未知", "未知"
+            if self.emotion_recognizer:
+                try:
+                    # 调用你写的推断接口
+                    ai_res = self.emotion_recognizer.predict(temp_path)
+                    emo = ai_res.get("emotion", "neutral")
+                    gen = ai_res.get("gender", "未知")
+                    age = ai_res.get("age", "未知")
+                except Exception as e:
+                    print(f"大模型识别失败: {e}")
             
             # 清理临时文件
             if os.path.exists(temp_path):
@@ -99,7 +113,9 @@ class MeetingDiary:
                 "start":start,
                 "end":end,
                 "speaker":speaker,
-                "emotion":"neutral",
+                "emotion":emo,     # 接入真实情感
+                "gender":gen,      # 接入真实性别
+                "age":age,         # 接入真实年龄
                 "text":text.strip()
             })
         
