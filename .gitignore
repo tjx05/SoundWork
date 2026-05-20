@@ -1,11 +1,18 @@
 # 忽略整个Data文件夹，里面所有东西都不上传
 Data/*
+data/*
 seapker_checkpoints/*
 
 __pycache__/*
 *.pyc
 
 speaker_checkpoints/*
+emotion_checkpoints/*
+local_base_model/*
+ffmpeg-7.0.2-amd64-static/*
+8p(1).wav
+ffmpeg-release-amd64-static.tar.xz
+test_8p.py
 
 record/*
 
