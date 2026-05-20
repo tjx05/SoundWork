@@ -5,7 +5,10 @@ let mediaRecorder = null;
 let isRecording = false;
 let audioChunks = [];
 let selectedAudioFile = null;  // 存储选中的文件
-let isParsing = false; // 新增：标记是否正在解析
+let isParsing = false; // 标记是否正在解析
+let isPaused = false;  // 是否处于暂停状态
+
+let totalOffset = 0;  // 记录当前录音已处理的总时长
 
 // DOM 元素
 const langSwitch = document.getElementById('langSwitch');
@@ -234,8 +237,8 @@ window.editChatText = function(idx, bubbleEl) {
 // 禁用/启用录音控制按钮
 function setRecordBtnStatus(disabled) {
   startRec.disabled = disabled;
-  pauseRec.disabled = disabled ? true : pauseRec.disabled;
-  stopRec.disabled = disabled ? true : stopRec.disabled;
+  pauseRec.disabled = disabled;
+  stopRec.disabled = disabled;
 }
 
 // 执行解析
@@ -371,81 +374,349 @@ audioFile.onchange = function(e) {
 startParseBtn.onclick = parseAudio;
 
 // 实时录音
+// 实时录音 - 前端 VAD 智能分段版（每次说话新建 Recorder）
+let audioContext = null;
+let analyserNode = null;
+let sourceNode = null;
+let isSpeaking = false;
+let vadMonitorInterval = null;
+let lastSpeechTime = 0;
+let currentStream = null;
+
 async function startRecording() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
-    audioChunks = [];
-    
-    mediaRecorder.ondataavailable = (event) => {
-      audioChunks.push(event.data);
-    };
-    
-    mediaRecorder.onstop = async () => {
-      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-      selectedAudioFile = new File([audioBlob], 'recording.wav', { type: 'audio/wav' });
-      
-      stream.getTracks().forEach(track => track.stop());
-      
-      // 自动开始解析
-      await parseAudio();
-    };
-    
-    mediaRecorder.start();
-    isRecording = true;
-    chatBox.innerHTML = '<div style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-microphone"></i> 正在录音...</div>';
-    diaryBox.innerHTML = '<div style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-microphone"></i> 录音中，结束后自动解析...</div>';
-  } catch (err) {
-    showCustomToast('无法访问麦克风: ' + err.message, 'error');
-    return false;
-  }
-  return true;
+    try {
+        currentStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        // 创建 AudioContext 用于音量检测
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 256;
+        sourceNode = audioContext.createMediaStreamSource(currentStream);
+        sourceNode.connect(analyserNode);
+        await audioContext.resume();
+        
+        isRecording = true;
+        isSpeaking = false;
+        isPaused = false;  // 重置暂停状态
+        
+        // 音量监测
+        startVolumeMonitor();
+        
+        chatBox.innerHTML = '<div id="recording-status" style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-microphone"></i> 智能分段录音中...</div>';
+        diaryBox.innerHTML = '<div style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-microphone"></i> 说完一段话后自动识别...</div>';
+    } catch (err) {
+        showCustomToast('无法访问麦克风: ' + err.message, 'error');
+        return false;
+    }
+    return true;
 }
 
-function stopRecording() {
-  if (mediaRecorder && isRecording) {
-    mediaRecorder.stop();
+// 提取音量监测为独立函数
+function startVolumeMonitor() {
+    if (vadMonitorInterval) clearInterval(vadMonitorInterval);
+    
+    vadMonitorInterval = setInterval(() => {
+        if (!analyserNode || isPaused) return;  // 暂停时跳过检测
+        const volume = getVolumeLevel();
+        const now = Date.now();
+        
+        if (volume > 0.02) {
+            lastSpeechTime = now;
+            if (!isSpeaking) {
+                isSpeaking = true;
+                startNewSegment();
+            }
+        } else {
+            if (isSpeaking && (now - lastSpeechTime) > 600) {
+                isSpeaking = false;
+                endCurrentSegment();
+            }
+        }
+    }, 100);
+}
+
+let currentRecorder = null;
+let currentSegmentChunks = [];
+
+function startNewSegment() {
+    console.log('开始新片段');
+    currentSegmentChunks = [];
+    currentRecorder = new MediaRecorder(currentStream, { mimeType: 'audio/webm' });
+    currentRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) currentSegmentChunks.push(e.data);
+    };
+    currentRecorder.start();
+}
+
+function endCurrentSegment() {
+    if (currentRecorder && currentRecorder.state === 'recording') {
+        console.log('结束片段，准备上传');
+        currentRecorder.stop();
+        currentRecorder.onstop = () => {
+            if (currentSegmentChunks.length > 0) {
+                const blob = new Blob(currentSegmentChunks, { type: 'audio/webm' });
+                if (blob.size > 5000) {
+                    const formData = new FormData();
+                    formData.append('audio', blob, `segment_${Date.now()}.webm`);
+                    parseAudioBlob(formData);
+                }
+            }
+            currentRecorder = null;
+            currentSegmentChunks = [];
+        };
+    }
+}
+
+// 获取音量
+function getVolumeLevel() {
+    if (!analyserNode) return 0;
+    const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+    analyserNode.getByteTimeDomainData(dataArray);
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+        const v = (dataArray[i] - 128) / 128;
+        sum += v * v;
+    }
+    return Math.sqrt(sum / dataArray.length);
+}
+
+
+// 上传片段
+async function uploadSegment(blob) {
+    if (blob.size < 5000) {
+        console.log('片段太小，跳过');
+        return;
+    }
+    const formData = new FormData();
+    formData.append('audio', blob, `segment_${Date.now()}.webm`);
+    await parseAudioBlob(formData);
+}
+
+function stopRecording(onComplete) {
+    console.log('stopRecording 被调用');
+    
+    // 1. 立即停止音量监测
+    if (vadMonitorInterval) {
+        clearInterval(vadMonitorInterval);
+        vadMonitorInterval = null;
+    }
+    
     isRecording = false;
-  }
+    isSpeaking = false;
+    isPaused = false;  // 重置暂停状态
+    
+    // 2. 停止当前录音器
+    if (currentRecorder && currentRecorder.state === 'recording') {
+        currentRecorder.stop();
+        currentRecorder.onstop = () => {
+            if (currentSegmentChunks.length > 0) {
+                const blob = new Blob(currentSegmentChunks, { type: 'audio/webm' });
+                if (blob.size > 5000) {
+                    const formData = new FormData();
+                    formData.append('audio', blob, `segment_${Date.now()}.webm`);
+                    parseAudioBlob(formData).finally(() => {
+                        if (onComplete) onComplete();
+                    });
+                } else {
+                    if (onComplete) onComplete();
+                }
+            } else {
+                if (onComplete) onComplete();
+            }
+            currentRecorder = null;
+            currentSegmentChunks = [];
+        };
+    } else {
+        if (onComplete) onComplete();
+    }
+    
+    // 3. 清理音频资源
+    if (audioContext) {
+        audioContext.close();
+        audioContext = null;
+    }
+    if (sourceNode) {
+        sourceNode.disconnect();
+        sourceNode = null;
+    }
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+    }
+    analyserNode = null;
 }
 
+let segmentSpeakerCounter = 0;  // 全局变量
+async function parseAudioBlob(formData) {
+    if (isParsing) return;
+    
+    isParsing = true;
+    startParseBtn.disabled = true;
+    setRecordBtnStatus(true);
+    startParseBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> 解析中...';
+    
+    // 只在日记区域显示状态，不清空对话区域
+    diaryBox.innerHTML = '<div style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-spinner fa-spin"></i> 正在生成会议记录，请稍候...</div>';
+    
+    try {
+        const response = await fetch('/api/recognize', { method: 'POST', body: formData });
+        const data = await response.json();
+        
+        if (data.success && data.segments) {
+            // 追加显示，不清空
+            for (const seg of data.segments) {
+                console.log('片段原始时间:', seg.start, seg.end);
+                // 加上偏移量，得到在整个录音中的真实时间
+                const realStart = totalOffset + seg.start;
+                const timeStr = formatTime(realStart);  // 格式化为 mm:ss
+                console.log('seg.start:', seg.start, 'seg.end:', seg.end, 'totalOffset:', totalOffset);
+
+                let speaker = seg.person;
+                // 如果是未注册的 SPEAKER_XX，统一改成递增的序号
+                if (speaker && speaker.startsWith('SPEAKER_')) {
+                    segmentSpeakerCounter++;
+                    speaker = `SPEAKER_${segmentSpeakerCounter.toString().padStart(2, '0')}`;
+                }
+                addChat(timeStr, speaker, seg.mood, seg.level, seg.text);
+            }
+
+            // 更新偏移量：加上最后一个片段的结束时间
+            if (data.segments.length > 0) {
+                totalOffset += data.segments[data.segments.length - 1].end;
+            }
+
+            showCustomToast(`识别成功！`);
+        } else {
+            showCustomToast('识别失败：' + (data.message || '未知错误'), 'error');
+        }
+    } catch (err) {
+        showCustomToast('识别失败：' + err.message, 'error');
+    } finally {
+        isParsing = false;
+        startParseBtn.disabled = false;
+        startParseBtn.innerHTML = '<i class="fa fa-play"></i> 开始解析';
+        setRecordBtnStatus(false);
+        generateDiary();  // 刷新日记显示
+    }
+}
+
+// 格式化时间，将秒转换为 mm:ss 格式
+function formatTime(seconds) {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+// 使用简单的 MediaRecorder 录音（完整录音后识别）
 startRec.onclick = async function() {
-  if (isRecording || isParsing) {
-    showCustomToast(isParsing ? '当前正在解析音频，请稍后再试' : '已在录音中', 'error');
-    return;
-  }
-  
-  parseData = [];
-  chatBox.innerHTML = '';
-  diaryBox.innerText = '';
-  downBtn.disabled = true;
-  startParseBtn.disabled = true;
-  
-  startRec.disabled = true;
-  pauseRec.disabled = false;
-  stopRec.disabled = false;
-  
-  await startRecording();
+    if (isParsing) {
+        showCustomToast('正在解析中，请稍后', 'error');
+        return;
+    }
+    
+    // 处理暂停后继续的情况
+    if (isPaused && currentStream) {
+        // 继续录音
+        isPaused = false;
+        
+        // 重启音量监测
+        startVolumeMonitor();
+        
+        // 恢复录音器
+        if (currentRecorder && currentRecorder.state === 'paused') {
+            currentRecorder.resume();
+        }
+        
+        // 更新按钮状态
+        startRec.disabled = true;
+        pauseRec.disabled = false;
+        stopRec.disabled = false;
+        
+        // 恢复提示
+        const statusDiv = document.getElementById('recording-status');
+        if (statusDiv) {
+            statusDiv.innerHTML = '<i class="fa fa-microphone"></i> 智能分段录音中...';
+        }
+        
+        showCustomToast('继续录音', 'success');
+        return;
+    }
+
+    // 正常开始新录音
+    if (isRecording) {
+        showCustomToast('已在录音中', 'error');
+        return;
+    }
+    
+    // 清空之前的对话
+    parseData = [];
+    chatBox.innerHTML = '';
+    diaryBox.innerText = '';
+    downBtn.disabled = true;
+    startParseBtn.disabled = true;
+    
+    startRec.disabled = true;
+    pauseRec.disabled = false;
+    stopRec.disabled = false;
+
+    totalOffset = 0;  // 重置偏移量
+    segmentSpeakerCounter = 0;  // 重置递增序号
+    
+    await startRecording();  // 调用你已有的 startRecording（使用 MediaRecorder）
 }
 
 pauseRec.onclick = function() {
-  if (mediaRecorder && isRecording) {
-    mediaRecorder.pause();
+    if (!isRecording || isPaused) return;
+    
+    // 暂停状态标记
+    isPaused = true;
+    
+    // 停止音量监测
+    if (vadMonitorInterval) {
+        clearInterval(vadMonitorInterval);
+        vadMonitorInterval = null;
+    }
+    
+    // 暂停当前录音器（只调用一次）
+    if (currentRecorder && currentRecorder.state === 'recording') {
+        currentRecorder.pause();
+    }
+    
+    // 更新按钮状态
     pauseRec.disabled = true;
     startRec.disabled = false;
-    chatBox.innerHTML = '<div style="text-align:center; color:#999; padding:20px;"><i class="fa fa-pause-circle"></i> 录音已暂停</div>';
-    showCustomToast('录音已暂停');
-  }
+    
+    // 更新提示
+    const statusDiv = document.getElementById('recording-status');
+    if (statusDiv) {
+        statusDiv.innerHTML = '<i class="fa fa-pause-circle"></i> 录音已暂停，点击"实时录音"继续';
+    } else {
+        chatBox.innerHTML = '<div id="recording-status" style="text-align:center; color:#999; padding:20px;"><i class="fa fa-pause-circle"></i> 录音已暂停</div>';
+    }
+    
+    showCustomToast('录音已暂停', 'success');
 }
 
 stopRec.onclick = function() {
-  if (mediaRecorder && isRecording) {
-    stopRecording();
-  }
-  startRec.disabled = false;
-  pauseRec.disabled = true;
-  stopRec.disabled = true;
+    if (!isRecording) return;
+
+    // 如果处于暂停状态，先清除暂停标记
+    isPaused = false;
+
+    // 清除录音中的提示
+    const statusDiv = document.getElementById('recording-status');
+    if (statusDiv) statusDiv.remove();
+    
+    // 停止录音，传回调
+    stopRecording(() => {
+        // 最后一段上传完成后，恢复按钮
+        startRec.disabled = false;
+        stopRec.disabled = true;
+        pauseRec.disabled = true;
+        showCustomToast('录音结束，识别完成', 'success');
+    });
 }
+
 
 // 导出TXT
 downBtn.onclick = function() {
