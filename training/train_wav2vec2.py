@@ -6,6 +6,12 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
+# === 新增：导入绘图库并设置服务器无头模式 ===
+import matplotlib
+matplotlib.use('Agg') # 确保在没有显示器的Linux服务器上也能正常画图保存
+import matplotlib.pyplot as plt
+# ==========================================
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from models.wav2vec2_model import Wav2vec2MultiTaskModel
@@ -18,7 +24,12 @@ def main():
     csv_path = "./data/processed/cremad_index.csv"
     audio_dir = "./data/raw/AudioWAV"
     checkpoint_dir = "./emotion_checkpoints"
+    
+    # === 新增：创建 output 文件夹 ===
+    output_dir = "./output"
     os.makedirs(checkpoint_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+    # ===============================
 
     # === Wav2vec 2.0 专用超参数 ===
     BATCH_SIZE = 16          # 大模型极占显存，A40虽然大，但建议先降到 16 试试水
@@ -45,6 +56,16 @@ def main():
     
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     best_target_score = 0.0
+
+    # === 新增：用于记录训练过程的数据字典 ===
+    history = {
+        "train_loss": [],
+        "val_loss": [],
+        "acc_emo": [],
+        "acc_gen": [],
+        "acc_age": []
+    }
+    # ========================================
 
     print("========== 开始大模型微调 ==========")
     for epoch in range(1, EPOCHS + 1):
@@ -101,28 +122,68 @@ def main():
                 correct_age += (preds_age == batch_age).sum().item()
                 total_samples += batch_wave.size(0)
                 
-        # ... 前面的代码保持不变 ...
         avg_val_loss = val_loss / len(val_loader)
         acc_emo = correct_emo / total_samples * 100
         acc_gen = correct_gen / total_samples * 100
         acc_age = correct_age / total_samples * 100
         
+        # === 新增：将本轮指标存入字典 ===
+        history["train_loss"].append(avg_train_loss)
+        history["val_loss"].append(avg_val_loss)
+        history["acc_emo"].append(acc_emo)
+        history["acc_gen"].append(acc_gen)
+        history["acc_age"].append(acc_age)
+        # ================================
+
         print(f"Epoch {epoch} Summary | Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
         print(f"-> Val Acc - Emo: {acc_emo:.2f}% | Gen: {acc_gen:.2f}% | Age: {acc_age:.2f}%")
         
-        # ==================== 修改部分：按准确率均值保存 ====================
-        # 计算三个任务准确率的算术平均值
         avg_acc = (acc_emo + acc_gen + acc_age) / 3.0
         
         if avg_acc > best_target_score:
             best_target_score = avg_acc
-            save_path = os.path.join(checkpoint_dir, "best_wav2vec2_model.pth")
+            save_path = os.path.join(checkpoint_dir, "best_wav2vec2_model_1.pth")
             torch.save(model.state_dict(), save_path)
             print(f"*** 综合准确率均值创新高 ({avg_acc:.2f}%)，已保存大模型权重至 {save_path} ***\n")
         else:
             print("")
-        # ====================================================================
+            
+    # ========== 新增：训练结束后，绘制并保存所有曲线 ==========
+    print("========== 正在绘制并保存训练曲线 ==========")
+    epochs_range = range(1, EPOCHS + 1)
+    
+    # 创建一个 1行2列 的宽图 (左边Loss，右边Accuracy)
+    plt.figure(figsize=(14, 5))
+    
+    # 1. 绘制 Loss 曲线
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs_range, history['train_loss'], label='Train Loss', marker='o')
+    plt.plot(epochs_range, history['val_loss'], label='Validation Loss', marker='o')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    
+    # 2. 绘制 Accuracy 曲线
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs_range, history['acc_emo'], label='Emotion Acc', marker='^')
+    plt.plot(epochs_range, history['acc_gen'], label='Gender Acc', marker='s')
+    plt.plot(epochs_range, history['acc_age'], label='Age Acc', marker='d')
+    plt.title('Validation Accuracies (Multi-Task)')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy (%)')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    
+    # 调整布局并保存
+    plt.tight_layout()
+    plot_save_path = os.path.join(output_dir, "training_curves.png")
+    plt.savefig(plot_save_path, dpi=300) # 保存为高清图片
+    plt.close()
+    
+    print(f"✅ 训练曲线已成功保存至: {plot_save_path}")
+    # ==========================================================
 
-# 别忘了文件最末尾一定要有这两行：
 if __name__ == "__main__":
     main()

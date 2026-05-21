@@ -4,6 +4,7 @@ import uuid
 import shutil
 import wave
 import json
+from pydub import AudioSegment
 
 from main import MeetingDiary
 from recognition.wav2vec2_reco import Wav2vec2Recognizer
@@ -87,19 +88,38 @@ def register_speaker():
 @app.route('/api/recognize', methods=['POST'])
 def recognize_audio():
     """识别会议录音"""
-    file=request.files.get('audio')
+    file = request.files.get('audio')
     if not file:
-        return jsonify({"success": False,"message": "请上传音频文件"})
+        return jsonify({"success": False, "message": "请上传音频文件"})
 
-    filename=f"temp.wav"
-    path=os.path.join(UPLOAD_FOLDER,filename)
-    file.save(path)
-
+    # 保存原始文件
+    original_filename = f"{uuid.uuid4().hex}"
+    original_path = os.path.join(UPLOAD_FOLDER, original_filename)
+    file.save(original_path)
+    
+    # 读取文件头判断格式
+    with open(original_path, 'rb') as f:
+        header = f.read(16)
+    
+    # 判断文件类型
+    if header[:4].hex() == '1a45dfa3':  # WebM 文件头
+        file_type = 'webm'
+        wav_path = original_path + '.wav'
+        try:
+            audio = AudioSegment.from_file(original_path, format="webm")
+            audio.export(wav_path, format="wav")
+            process_path = wav_path
+        except Exception as e:
+            return jsonify({"success": False, "message": f"WebM转换失败: {str(e)}"})
+    else:
+        # 假设是 WAV 或其他 torchaudio 能读的格式
+        process_path = original_path
+        wav_path = None  # 不需要清理额外文件
+    
     try:
-        results=diary.process(path)
-
-        # 转换为前端需要的格式
-        segments=[]
+        results = diary.process(process_path)
+        
+        segments = []
         for r in results:
             # === 修改 3：把性别和年龄拼到名字后面给前端展示 ===
             # 例如展示为 "张三 (中年·男)"
@@ -108,21 +128,26 @@ def recognize_audio():
                 display_name = f"{r['speaker']} ({r['age']}·{r['gender']})"
 
             segments.append({
-                "time": f"{int(r['start']//60):02d}:{int(r['start']%60):02d}", 
-                "person": display_name,   # 用带标签的名字
-                "mood": r['emotion'],     # 这里现在是你大模型跑出的真实情感了！
-                "level": "MID", 
+                "time": f"{int(r['start']//60):02d}:{int(r['start']%60):02d}",
+                "start": r['start'],  # 添加原始秒数
+                "end": r['end'],  # 添加原始秒数
+                "person": r['speaker'],
+                "mood": r['emotion'],
+                "level": "MID",
                 "text": r['text']
             })
-        return jsonify({"success": True,"segments": segments})
+        return jsonify({"success": True, "segments": segments})
     
     except Exception as e:
-        return jsonify({"success": False,"message": str(e)})
+        print(f"识别错误: {e}")
+        return jsonify({"success": False, "message": str(e)})
     
     finally:
         # 清理临时文件
-        if os.path.exists(path):
-            os.remove(path)
+        if os.path.exists(original_path):
+            os.remove(original_path)
+        if wav_path and os.path.exists(wav_path):
+            os.remove(wav_path)
 
 
 @app.route('/api/rename_speaker', methods=['POST'])
