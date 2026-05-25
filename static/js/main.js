@@ -42,7 +42,7 @@ function generateDiary() {
   let txt = '【多人会议结构化日记】\n';
   txt += '——————————————\n';
   parseData.forEach(d => {
-    txt += `[${d.time}] ${d.person}：${d.text}\n`;
+    txt += `[${d.time}] ${d.person} [${d.mood}]：${d.text}\n`;
   });
   diaryBox.innerText = txt;
   diaryBox.scrollTop = diaryBox.scrollHeight;
@@ -270,7 +270,25 @@ async function parseAudio() {
     
     if (data.success && data.segments) {
       // 解析成功，渲染数据
-      addChats(data.segments);
+      parseData = [];
+      chatBox.innerHTML = '';
+        
+      for (const seg of data.segments) {
+          let speaker = seg.person;
+          // 构建显示名称
+          let displayName = speaker;
+          if (seg.gender && seg.age) {
+              displayName = `${speaker} (${seg.age}·${seg.gender})`;
+          } else if (seg.gender) {
+              displayName = `${speaker} (${seg.gender})`;
+          } else if (seg.age) {
+              displayName = `${speaker} (${seg.age})`;
+          }
+          addChat(seg.time, displayName, seg.mood, seg.level, seg.text);
+      }
+      generateDiary();
+      downBtn.disabled = false;
+      // addChats(data.segments);
       // 自定义友好提示（替换系统alert）
       showCustomToast(`解析完成！共识别 ${data.segments.length} 段对话`);
     } else {
@@ -402,7 +420,7 @@ async function startRecording() {
         // 音量监测
         startVolumeMonitor();
         
-        chatBox.innerHTML = '<div id="recording-status" style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-microphone"></i> 智能分段录音中...</div>';
+        // chatBox.innerHTML = '<div id="recording-status" style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-microphone"></i> 智能分段录音中...</div>';
         diaryBox.innerHTML = '<div style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-microphone"></i> 说完一段话后自动识别...</div>';
     } catch (err) {
         showCustomToast('无法访问麦克风: ' + err.message, 'error');
@@ -577,7 +595,18 @@ async function parseAudioBlob(formData) {
                     segmentSpeakerCounter++;
                     speaker = `SPEAKER_${segmentSpeakerCounter.toString().padStart(2, '0')}`;
                 }
-                addChat(timeStr, speaker, seg.mood, seg.level, seg.text);
+
+                // 构建显示名称（添加性别年龄）
+                let displayName = speaker;
+                if (seg.gender && seg.age) {
+                    displayName = `${speaker} (${seg.age}·${seg.gender})`;
+                } else if (seg.gender) {
+                    displayName = `${speaker} (${seg.gender})`;
+                } else if (seg.age) {
+                    displayName = `${speaker} (${seg.age})`;
+                }
+
+                addChat(timeStr, displayName, seg.mood, seg.level, seg.text);
             }
 
             // 更新偏移量：加上最后一个片段的结束时间
@@ -631,11 +660,14 @@ startRec.onclick = async function() {
         startRec.disabled = true;
         pauseRec.disabled = false;
         stopRec.disabled = false;
+
+        // 更新按钮文字
+        startRec.innerHTML="正在录音";
         
         // 恢复提示
         const statusDiv = document.getElementById('recording-status');
         if (statusDiv) {
-            statusDiv.innerHTML = '<i class="fa fa-microphone"></i> 智能分段录音中...';
+            // statusDiv.innerHTML = '<i class="fa fa-microphone"></i> 智能分段录音中...';
         }
         
         showCustomToast('继续录音', 'success');
@@ -658,6 +690,9 @@ startRec.onclick = async function() {
     startRec.disabled = true;
     pauseRec.disabled = false;
     stopRec.disabled = false;
+
+    // 更新按钮文字
+    startRec.innerHTML="正在录音";
 
     totalOffset = 0;  // 重置偏移量
     segmentSpeakerCounter = 0;  // 重置递增序号
@@ -685,13 +720,16 @@ pauseRec.onclick = function() {
     // 更新按钮状态
     pauseRec.disabled = true;
     startRec.disabled = false;
+
+    // 更新按钮文字
+    startRec.innerHTML="继续录音";
     
     // 更新提示
     const statusDiv = document.getElementById('recording-status');
     if (statusDiv) {
         statusDiv.innerHTML = '<i class="fa fa-pause-circle"></i> 录音已暂停，点击"实时录音"继续';
     } else {
-        chatBox.innerHTML = '<div id="recording-status" style="text-align:center; color:#999; padding:20px;"><i class="fa fa-pause-circle"></i> 录音已暂停</div>';
+        // chatBox.innerHTML = '<div id="recording-status" style="text-align:center; color:#999; padding:20px;"><i class="fa fa-pause-circle"></i> 录音已暂停</div>';
     }
     
     showCustomToast('录音已暂停', 'success');
@@ -713,6 +751,11 @@ stopRec.onclick = function() {
         startRec.disabled = false;
         stopRec.disabled = true;
         pauseRec.disabled = true;
+        downBtn.disabled = false;
+
+        // 更新按钮文字
+        startRec.innerHTML='实时录音';
+
         showCustomToast('录音结束，识别完成', 'success');
     });
 }

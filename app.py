@@ -7,15 +7,19 @@ import json
 from pydub import AudioSegment
 
 from main import MeetingDiary
+from recognition.wav2vec2_reco import Wav2vec2Recognizer
 
 app=Flask(__name__)
 UPLOAD_FOLDER='uploads'
 os.makedirs(UPLOAD_FOLDER,exist_ok=True)
 os.makedirs("temp",exist_ok=True)  # 用于存放临时音频片段
 
+print("加载大模型...")
+ai_model = Wav2vec2Recognizer(model_path="emotion_checkpoints/best_wav2vec2_model.pth")
+
 # 初始化日记系统（只加载一次）
 print("初始化会议日记系统...")
-diary=MeetingDiary()
+diary=MeetingDiary(emotion_recognizer=ai_model)
 print("初始化完成")
 
 # 存储注册说话人的额外信息（性别、年龄）
@@ -116,12 +120,18 @@ def recognize_audio():
         
         segments = []
         for r in results:
+            # display_name = r['speaker']
+            # if 'gender' in r and 'age' in r:
+            #     display_name = f"{r['speaker']} ({r['age']}·{r['gender']})"
             segments.append({
                 "time": f"{int(r['start']//60):02d}:{int(r['start']%60):02d}",
                 "start": r['start'],  # 添加原始秒数
                 "end": r['end'],  # 添加原始秒数
-                "person": r['speaker'],
+                # "person": display_name,
+                "person": r['speaker'],  # 原始姓名，用于前端序号递增
                 "mood": r['emotion'],
+                "gender": r.get('gender', ''),
+                "age": r.get('age', ''),
                 "level": "MID",
                 "text": r['text']
             })
