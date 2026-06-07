@@ -320,3 +320,24 @@ body {
 .ctrl-btn:disabled {
   opacity: 0.7;
 }
+/* 右键菜单 */
+.context-menu {
+  position: fixed;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+  z-index: 10000;
+  min-width: 150px;
+  overflow: hidden;
+}
+
+.menu-item {
+  padding: 10px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.menu-item:hover {
+  background: #f0f0f0;
+}

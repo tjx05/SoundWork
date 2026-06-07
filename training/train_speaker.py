@@ -108,12 +108,12 @@ def main():
         val_accs.append(val_acc)
         if val_acc > best_val_acc:
             best_val_acc = val_acc
-            os.makedirs("seapker_checkpoints",exist_ok=True)
-            torch.save(model.state_dict(),'seapker_checkpoints/best_model.pth')
+            os.makedirs("speaker_checkpoints",exist_ok=True)
+            torch.save(model.state_dict(),'speaker_checkpoints/best_model.pth')
             print(f"保存模型 | 验证准确率: {val_acc*100:.2f}% | 训练损失: {avg_loss:.4f}")
     
     # 2. 保存训练历史
-    save_path="seapker_checkpoints"
+    save_path="speaker_checkpoints"
     history={
         'train_losses': train_losses,  # list of float
         'val_accs': val_accs,          # list of float

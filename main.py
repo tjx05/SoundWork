@@ -61,66 +61,82 @@ class MeetingDiary:
                 
     
     def process(self,audio_path):
-        # 说话人分割
-        # print("分割中……")
-        # segments=self.diarizer.diarize(audio_path)
-
         # 语音转文字
         print("转写中……")
         transcripts=self.asr.transcribe(audio_path)
 
-        # 对齐+说话人识别
+        # 对齐+说话人识别（支持自动注册和移动平均）
         print("对齐中……")
         results=[]
-        unknown_counter=0
 
         for seg in transcripts:
             start=seg['start']
             end=seg['end']
             text=seg['text']
+            duration=end-start  # 计算片段时长，用于质量评估
 
             # 提取片段
             temp_path=self.extract_segment(audio_path,start,end)
 
-            # 识别说话人
-            name,score=self.recognizer.identify(temp_path)
+            # 识别说话人（自动注册陌生人，支持移动平均更新）
+            speaker,score,source,gender,age=self.recognizer.identify_or_register(
+                temp_path,segment_duration=duration
+            )
 
-            if name is None:
-                unknown_counter+=1
-                speaker=f"SPEAKER_{unknown_counter:02d}"
-                print(f"  [{start:.1f}s-{end:.1f}s] 未注册 -> {speaker} (相似度 {score:.4f})")
+            # 打印详细信息
+            if source == "new_temp":
+                print(f"  [{start:.1f}s-{end:.1f}s] 新说话人 {speaker} (自动注册, 时长{duration:.1f}s)")
+            elif source == "temp":
+                data = self.recognizer.temp_speakers.get(speaker, {})
+                print(f"  [{start:.1f}s-{end:.1f}s] {speaker} (第{data.get('count', 0)}段, 相似度{score:.3f})")
             else:
-                speaker=name
-                print(f"  [{start:.1f}s-{end:.1f}s] {speaker} (相似度 {score:.4f})")
+                print(f"  [{start:.1f}s-{end:.1f}s] {speaker} (相似度{score:.3f})")
 
-            # === 修改 2：顺手把临时音频喂给你的大模型测情感 ===
-            emo, gen, age = "neutral", "未知", "未知"
+            # 情感、性别、年龄识别
+            emo="neutral"
             if self.emotion_recognizer:
                 try:
-                    # 调用你写的推断接口
                     ai_res = self.emotion_recognizer.predict(temp_path)
                     emo = ai_res.get("emotion", "neutral")
-                    gen = ai_res.get("gender", "未知")
-                    age = ai_res.get("age", "未知")
+
+                    # 只有当前性别/年龄是"未知"时，才用情感识别器的值覆盖
+                    if source in ["new_temp", "temp"]:
+                        updated = False
+                        if gender == "未知":
+                            new_gender = ai_res.get("gender", "未知")
+                            if new_gender != "未知":
+                                gender = new_gender
+                                updated = True
+                        if age == "未知":
+                            new_age = ai_res.get("age", "未知")
+                            if new_age != "未知":
+                                age = new_age
+                                updated = True
+                        
+                        # 同步更新 recognizer 中的临时说话人数据
+                        if updated and speaker in self.recognizer.temp_speakers:
+                            self.recognizer.temp_speakers[speaker]["gender"] = gender
+                            self.recognizer.temp_speakers[speaker]["age"] = age
+
                 except Exception as e:
                     print(f"大模型识别失败: {e}")
-            
+
             # 清理临时文件
             if os.path.exists(temp_path):
                 os.remove(temp_path)
-            
+
             results.append({
                 "start":start,
                 "end":end,
                 "speaker":speaker,
-                "emotion":emo,     # 接入真实情感
-                "gender":gen,      # 接入真实性别
-                "age":age,         # 接入真实年龄
+                "emotion":emo,
+                "gender":gender,
+                "age":age,
                 "text":text.strip()
             })
-        
+
         # 合并相邻的统一说话人
-        merged=self.merge_speaker(results)
+        merged = self.merge_speaker(results)
 
         return merged
 
@@ -159,8 +175,8 @@ class MeetingDiary:
         for r in results:
             print(f"[{r['start']:.1f}s -> {r['end']:.1f}s] {r['speaker']}: {r['text']}")
 
-# if __name__=="__main__":
-#     diary=MeetingDiary()
-#     results=diary.process("Data/mix/tem2.WAV")
-#     diary.print_diary(results)
+if __name__=="__main__":
+    diary=MeetingDiary()
+    results=diary.process("Data/mix/tem2.WAV")
+    diary.print_diary(results)
 

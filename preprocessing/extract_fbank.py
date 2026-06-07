@@ -6,7 +6,7 @@ def extract_fbank(file_path,n_mels=80,max_len=250,sr=16000):
     提取FBank特征
 
     输入：
-        file_path:音频文件路径
+        file_path:可以是文件路径(str) 或 波形数组(np.ndarray)
         n_mels:梅尔滤波器数量
         max_len:最大音频长度
         sr:采样率
@@ -14,7 +14,10 @@ def extract_fbank(file_path,n_mels=80,max_len=250,sr=16000):
         log_mel: 对数FBank特征矩阵(n_mels,max_len)
     """
     # 加载音频
-    y,sr=librosa.load(file_path,sr=sr)
+    if isinstance(file_path, str):
+        y,sr = librosa.load(file_path, sr=sr)
+    else:
+        y = file_path
 
     # 预加重
     y=librosa.effects.preemphasis(y,coef=0.97)

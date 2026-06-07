@@ -10,6 +10,13 @@ let isPaused = false;  // 是否处于暂停状态
 
 let totalOffset = 0;  // 记录当前录音已处理的总时长
 
+// ========== 队列管理相关变量 ==========
+let parseQueue = [];        // 待解析队列
+let isProcessing = false;   // 是否正在处理
+let pendingSegments = [];   // 等待显示的片段（用于排序）
+let segmentIndex = 0;       // 片段序号
+let nextExpectedIndex = 0;  // 下一个期望显示的序号
+
 // DOM 元素
 const langSwitch = document.getElementById('langSwitch');
 const uploadBox = document.getElementById('uploadBox');
@@ -55,15 +62,141 @@ function renderSpeaker() {
     let div = document.createElement('div');
     div.className = 'speaker-item';
     div.dataset.id = item.id;
+    div.dataset.name = item.name;
+    div.dataset.isReg = item.isReg;
     div.innerHTML = `
       <div>
         <span class="name">${escapeHtml(item.name)}</span>
+        <span class="attrs">(${item.age}·${item.gender})</span>
       </div>
       <span class="auto-tag">${item.isReg ? '已注册' : '自动识别'}</span>
     `;
     div.ondblclick = () => editSpeakerGlobal(item.id);
+    
+    // 添加右键菜单事件
+    div.oncontextmenu = (e) => {
+      e.preventDefault();
+      showContextMenu(e, item);
+    };
+    
     speakerListDom.appendChild(div);
   });
+}
+
+// 显示右键菜单
+function showContextMenu(event, speaker) {
+  // 移除已有的菜单
+  const existingMenu = document.querySelector('.context-menu');
+  if (existingMenu) existingMenu.remove();
+  
+  // 创建菜单
+  const menu = document.createElement('div');
+  menu.className = 'context-menu';
+  menu.style.position = 'fixed';
+  menu.style.left = `${event.pageX}px`;
+  menu.style.top = `${event.pageY}px`;
+  
+  if (!speaker.isReg) {
+    // 临时说话人：显示"注册"
+    menu.innerHTML = `
+      <div class="menu-item" data-action="register">📝 注册为永久说话人</div>
+    `;
+  } else {
+    // 已注册说话人：显示"删除"
+    menu.innerHTML = `
+      <div class="menu-item" data-action="delete">🗑️ 删除说话人</div>
+    `;
+  }
+  
+  document.body.appendChild(menu);
+  
+  // 绑定菜单项事件
+  menu.querySelector('.menu-item').onclick = () => {
+    if (!speaker.isReg) {
+      registerTempSpeaker(speaker.name);
+    } else {
+      deleteRegisteredSpeaker(speaker.name);
+    }
+    menu.remove();
+  };
+  
+  // 点击其他地方关闭菜单
+  const closeMenu = (e) => {
+    if (!menu.contains(e.target)) {
+      menu.remove();
+      document.removeEventListener('click', closeMenu);
+    }
+  };
+  setTimeout(() => {
+    document.addEventListener('click', closeMenu);
+  }, 10);
+}
+
+// 注册临时说话人
+async function registerTempSpeaker(tempName) {
+  const newName = prompt('请输入姓名：', tempName);
+  if (!newName) return;
+  
+  try {
+    const response = await fetch('/api/promote_temp_speaker', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        temp_name: tempName,
+        real_name: newName
+      })
+    });
+    const data = await response.json();
+    if (data.success) {
+      showCustomToast(data.message, 'success');
+      await loadSpeakers();
+      // 更新对话区的名字
+      updateChatSpeakerName(tempName, newName);
+    } else {
+      showCustomToast('注册失败: ' + data.message, 'error');
+    }
+  } catch (err) {
+    showCustomToast('网络错误: ' + err.message, 'error');
+  }
+}
+
+// 删除已注册说话人
+async function deleteRegisteredSpeaker(name) {
+  if (!confirm(`确定要删除说话人 "${name}" 吗？`)) return;
+  
+  try {
+    const response = await fetch('/api/delete_speaker', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name })
+    });
+    const data = await response.json();
+    if (data.success) {
+      showCustomToast(`已删除 ${name}`, 'success');
+      await loadSpeakers();
+    } else {
+      showCustomToast('删除失败: ' + data.message, 'error');
+    }
+  } catch (err) {
+    showCustomToast('网络错误: ' + err.message, 'error');
+  }
+}
+
+// 更新对话区中的说话人名称
+function updateChatSpeakerName(oldName, newName) {
+  for (let i = 0; i < parseData.length; i++) {
+    if (parseData[i].person.includes(oldName)) {
+      const match = parseData[i].person.match(/\((.*)\)/);
+      const attrs = match ? match[1] : '';
+      parseData[i].person = attrs ? `${newName} (${attrs})` : newName;
+    }
+  }
+  
+  chatBox.innerHTML = '';
+  for (let i = 0; i < parseData.length; i++) {
+    addChatItem(parseData[i], i);
+  }
+  generateDiary();
 }
 
 // 加载已注册说话人
@@ -80,21 +213,40 @@ async function loadSpeakers() {
   }
 }
 
-// 编辑说话人
+// 编辑说话人（双击触发）- 统一处理所有说话人
 async function editSpeakerGlobal(id) {
   const sp = speakerList.find(s => s.id === id);
   if (!sp) return;
   
   const oldName = sp.name;
+  
   const newName = prompt('修改姓名：', sp.name);
   if (!newName) return;
   
+  const newGender = prompt('修改性别（男/女）：', sp.gender);
+  if (!newGender || (newGender !== '男' && newGender !== '女')) {
+    alert('性别请输入"男"或"女"');
+    return;
+  }
+  
+  const newAge = prompt('修改年龄段（青年/中年/老年）：', sp.age);
+  if (!newAge || (newAge !== '青年' && newAge !== '中年' && newAge !== '老年')) {
+    alert('年龄段请输入"青年"、"中年"或"老年"');
+    return;
+  }
+  
   // 调用后端接口同步
   try {
-    const response = await fetch('/api/rename_speaker', {
+    const response = await fetch('/api/update_speaker', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ old_name: oldName, new_name: newName })
+      body: JSON.stringify({ 
+        old_name: oldName, 
+        new_name: newName,
+        gender: newGender,
+        age: newAge,
+        is_reg: sp.isReg  // 告诉后端是否是已注册的
+      })
     });
     const data = await response.json();
     if (!data.success) {
@@ -106,25 +258,27 @@ async function editSpeakerGlobal(id) {
     return;
   }
   
-  // 更新前端数据（与原来一样）
+  // 更新前端列表
   sp.name = newName;
+  sp.gender = newGender;
+  sp.age = newAge;
   renderSpeaker();
   
-  parseData.forEach(d => {
-    if (d.person === oldName) d.person = newName;
-  });
+  // 构建新的显示格式
+  const newDisplayName = `${newName} (${newAge}·${newGender})`;
   
-  // 更新 DOM
-  const chatItems = chatBox.querySelectorAll('.chat-item');
-  chatItems.forEach((item, idx) => {
-    if (idx < parseData.length && parseData[idx].person === newName) {
-      const nameSpan = item.querySelector('.chat-name');
-      if (nameSpan) {
-        nameSpan.textContent = newName;
-        nameSpan.ondblclick = () => editChatName(idx);
-      }
+  // 同步更新 parseData 中所有对话
+  for (let i = 0; i < parseData.length; i++) {
+    if (parseData[i].person.includes(oldName)) {
+      parseData[i].person = newDisplayName;
     }
-  });
+  }
+  
+  // 重新渲染对话区
+  chatBox.innerHTML = '';
+  for (let i = 0; i < parseData.length; i++) {
+    addChatItem(parseData[i], i);
+  }
   
   generateDiary();
 }
@@ -243,6 +397,11 @@ function setRecordBtnStatus(disabled) {
 
 // 执行解析
 async function parseAudio() {
+  // 新增：清空后端临时说话人缓存
+  try {
+    await fetch('/api/clear_temp_speakers', { method: 'POST' });
+  } catch(e) { console.log('清空缓存失败', e); }
+
   if (!selectedAudioFile || isParsing) {
     alert('请先上传音频文件');
     return;
@@ -274,21 +433,17 @@ async function parseAudio() {
       chatBox.innerHTML = '';
         
       for (const seg of data.segments) {
-          let speaker = seg.person;
-          // 构建显示名称
-          let displayName = speaker;
-          if (seg.gender && seg.age) {
-              displayName = `${speaker} (${seg.age}·${seg.gender})`;
-          } else if (seg.gender) {
-              displayName = `${speaker} (${seg.gender})`;
-          } else if (seg.age) {
-              displayName = `${speaker} (${seg.age})`;
-          }
+          // 直接使用后端返回的 person（已经是完整格式，如 "Speaker_01 (中年·女)"）
+          const displayName = seg.person;
           addChat(seg.time, displayName, seg.mood, seg.level, seg.text);
       }
       generateDiary();
       downBtn.disabled = false;
       // addChats(data.segments);
+
+      // 刷新左侧说话人列表（显示临时说话人）
+      await loadSpeakers();
+
       // 自定义友好提示（替换系统alert）
       showCustomToast(`解析完成！共识别 ${data.segments.length} 段对话`);
     } else {
@@ -350,6 +505,8 @@ function showCustomToast(message, type = 'success') {
 // 注册说话人
 regBtn.onclick = async function() {
   const name = document.getElementById('userName').value.trim();
+  const gender = document.getElementById('userGender').value;
+  const age = document.getElementById('userAge').value;
   const files = document.getElementById('spkAudioUp').files;
 
   if (!name) return showCustomToast('请输入姓名', 'error');
@@ -357,6 +514,8 @@ regBtn.onclick = async function() {
 
   const formData = new FormData();
   formData.append('name', name);
+  formData.append('gender', gender);
+  formData.append('age', age);
   for (let i = 0; i < files.length; i++) {
     formData.append('audios', files[i]);
   }
@@ -466,9 +625,11 @@ function startNewSegment() {
     currentRecorder.start();
 }
 
+// ========== 修改：endCurrentSegment 添加序号 ==========
 function endCurrentSegment() {
     if (currentRecorder && currentRecorder.state === 'recording') {
-        console.log('结束片段，准备上传');
+        const currentIndex = segmentIndex++;  // 分配序号
+        console.log('结束片段，准备上传，序号:', currentIndex);
         currentRecorder.stop();
         currentRecorder.onstop = () => {
             if (currentSegmentChunks.length > 0) {
@@ -476,7 +637,7 @@ function endCurrentSegment() {
                 if (blob.size > 5000) {
                     const formData = new FormData();
                     formData.append('audio', blob, `segment_${Date.now()}.webm`);
-                    parseAudioBlob(formData);
+                    parseAudioBlob(formData, currentIndex);  // 传入序号
                 }
             }
             currentRecorder = null;
@@ -565,67 +726,79 @@ function stopRecording(onComplete) {
 }
 
 let segmentSpeakerCounter = 0;  // 全局变量
-async function parseAudioBlob(formData) {
-    if (isParsing) return;
-    
-    isParsing = true;
-    startParseBtn.disabled = true;
-    setRecordBtnStatus(true);
-    startParseBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> 解析中...';
-    
-    // 只在日记区域显示状态，不清空对话区域
-    diaryBox.innerHTML = '<div style="text-align:center; color:#67b99a; padding:20px;"><i class="fa fa-spinner fa-spin"></i> 正在生成会议记录，请稍候...</div>';
-    
-    try {
-        const response = await fetch('/api/recognize', { method: 'POST', body: formData });
-        const data = await response.json();
-        
-        if (data.success && data.segments) {
-            // 追加显示，不清空
-            for (const seg of data.segments) {
-                console.log('片段原始时间:', seg.start, seg.end);
-                // 加上偏移量，得到在整个录音中的真实时间
-                const realStart = totalOffset + seg.start;
-                const timeStr = formatTime(realStart);  // 格式化为 mm:ss
-                console.log('seg.start:', seg.start, 'seg.end:', seg.end, 'totalOffset:', totalOffset);
 
-                let speaker = seg.person;
-                // 如果是未注册的 SPEAKER_XX，统一改成递增的序号
-                if (speaker && speaker.startsWith('SPEAKER_')) {
-                    segmentSpeakerCounter++;
-                    speaker = `SPEAKER_${segmentSpeakerCounter.toString().padStart(2, '0')}`;
-                }
-
-                // 构建显示名称（添加性别年龄）
-                let displayName = speaker;
-                if (seg.gender && seg.age) {
-                    displayName = `${speaker} (${seg.age}·${seg.gender})`;
-                } else if (seg.gender) {
-                    displayName = `${speaker} (${seg.gender})`;
-                } else if (seg.age) {
-                    displayName = `${speaker} (${seg.age})`;
-                }
-
+// ========== 修改：parseAudioBlob 添加序号参数，使用队列管理 ==========
+// 按顺序显示片段
+function displayInOrder() {
+    // 按 index 排序
+    pendingSegments.sort((a, b) => a.index - b.index);
+    
+    // 检查是否可以显示下一个
+    let displayed = false;
+    for (let i = 0; i < pendingSegments.length; i++) {
+        if (pendingSegments[i].index === nextExpectedIndex) {
+            // 显示这个片段
+            for (const seg of pendingSegments[i].segments) {
+                const displayName = seg.person;
+                const timeStr = formatTime(totalOffset + seg.start);
                 addChat(timeStr, displayName, seg.mood, seg.level, seg.text);
             }
-
-            // 更新偏移量：加上最后一个片段的结束时间
-            if (data.segments.length > 0) {
-                totalOffset += data.segments[data.segments.length - 1].end;
+            
+            // 更新偏移量
+            if (pendingSegments[i].segments.length > 0) {
+                totalOffset += pendingSegments[i].segments[pendingSegments[i].segments.length - 1].end;
             }
-
-            showCustomToast(`识别成功！`);
-        } else {
-            showCustomToast('识别失败：' + (data.message || '未知错误'), 'error');
+            
+            // 移除已显示的
+            pendingSegments.splice(i, 1);
+            nextExpectedIndex++;
+            displayed = true;
+            break;
         }
-    } catch (err) {
-        showCustomToast('识别失败：' + err.message, 'error');
-    } finally {
-        isParsing = false;
-        startParseBtn.disabled = false;
-        startParseBtn.innerHTML = '<i class="fa fa-play"></i> 开始解析';
-        setRecordBtnStatus(false);
-        generateDiary();  // 刷新日记显示
+    }
+    
+    // 如果显示了，继续检查下一个
+    if (displayed && pendingSegments.length > 0) {
+        displayInOrder();
+    }
+}
+
+async function parseAudioBlob(formData, idx) {
+    // 加入队列
+    parseQueue.push({ formData, index: idx });
+    
+    if (isProcessing) return;
+    
+    // 开始处理队列
+    while (parseQueue.length > 0) {
+        isProcessing = true;
+        const next = parseQueue.shift();
+        
+        try {
+            const response = await fetch('/api/recognize', { method: 'POST', body: next.formData });
+            const data = await response.json();
+            
+            if (data.success && data.segments) {
+                // 缓存结果，等待按顺序显示
+                pendingSegments.push({
+                    index: next.index,
+                    segments: data.segments,
+                    timestamp: Date.now()
+                });
+                
+                // 按顺序显示
+                displayInOrder();
+                
+                // 刷新左侧说话人列表（显示临时说话人）
+                await loadSpeakers();
+            } else {
+                console.error('识别失败:', data.message);
+            }
+        } catch (err) {
+            console.error('识别错误:', err);
+        }
+        
+        isProcessing = false;
     }
 }
 
@@ -638,6 +811,18 @@ function formatTime(seconds) {
 
 // 使用简单的 MediaRecorder 录音（完整录音后识别）
 startRec.onclick = async function() {
+    // 新增：清空后端临时说话人缓存
+    try {
+      await fetch('/api/clear_temp_speakers', { method: 'POST' });
+    } catch(e) { console.log('清空缓存失败', e); }
+
+    // ========== 新增：重置队列相关变量 ==========
+    segmentIndex = 0;
+    nextExpectedIndex = 0;
+    parseQueue = [];
+    pendingSegments = [];
+    isProcessing = false;
+
     if (isParsing) {
         showCustomToast('正在解析中，请稍后', 'error');
         return;

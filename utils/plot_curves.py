@@ -50,7 +50,7 @@ def plot_training_curves(history_path=None, train_losses=None, val_accs=None, sa
     
     plt.show()
 
-def plot_from_checkpoint(checkpoint_dir="seapker_checkpoints"):
+def plot_from_checkpoint(checkpoint_dir="speaker_checkpoints"):
     """目录加载历史并绘图"""
     history_path = os.path.join(checkpoint_dir,"training_history.json")
     if os.path.exists(history_path):

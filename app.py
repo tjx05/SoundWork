@@ -5,6 +5,7 @@ import shutil
 import wave
 import json
 from pydub import AudioSegment
+import numpy as np
 
 from main import MeetingDiary
 from recognition.wav2vec2_reco import Wav2vec2Recognizer
@@ -23,7 +24,7 @@ diary=MeetingDiary(emotion_recognizer=ai_model)
 print("初始化完成")
 
 # 存储注册说话人的额外信息（性别、年龄）
-speakers_db = {}  # {name: {"gender": "", "age": "", "embeddings": []}}
+# speakers_db = {}  # {name: {"gender": "", "age": "", "embeddings": []}}
 
 @app.route('/')
 def index():
@@ -32,18 +33,29 @@ def index():
 
 @app.route('/api/speakers', methods=['GET'])
 def get_speakers():
-    """获取所有已注册说话人"""
+    """获取所有已注册说话人+自动识别的人"""
     speakers = []
-    registered_names=diary.recognizer.list_enrolled_speakers()
-    for name in registered_names:
-        info=speakers_db.get(name, {"gender": "男", "age": "青年"})
+
+    # 添加已注册说话人
+    for name,data in diary.recognizer.database.items():
         speakers.append({
             "id": hash(name),
             "name": name,
-            "gender": info.get("gender","男"),
-            "age": info.get("age","青年"),
+            "gender": data.get("gender", "未知"),
+            "age": data.get("age", "未知"),
             "isReg": True
         })
+
+    # 添加自动识别的人
+    for name,data in diary.recognizer.temp_speakers.items():
+        speakers.append({
+            "id": hash(name),
+            "name": name,
+            "gender": data.get("gender", "未知"),
+            "age": data.get("age", "未知"),
+            "isReg": False # 标记为未注册（自动识别）
+        })
+    
     return jsonify({"speakers": speakers})
 
 
@@ -71,14 +83,21 @@ def register_speaker():
         audio_paths.append(path)
 
     # 调用识别器注册
-    diary.recognizer.enroll(name,audio_paths)
+    diary.recognizer.enroll(name,audio_paths,gender=gender,age=age)
 
-    # 存储额外信息
-    speakers_db[name] = {
-        "gender":gender,
-        "age":age,
-        "audio_paths":audio_paths
-    }
+    # 清理临时文件
+    for path in audio_paths:
+        try:
+            os.remove(path)
+        except:
+            pass
+
+    # # 存储额外信息
+    # speakers_db[name] = {
+    #     "gender":gender,
+    #     "age":age,
+    #     "audio_paths":audio_paths
+    # }
 
 
     return jsonify({"success": True, "message": f"{name} 注册成功"})
@@ -120,18 +139,18 @@ def recognize_audio():
         
         segments = []
         for r in results:
-            # display_name = r['speaker']
-            # if 'gender' in r and 'age' in r:
-            #     display_name = f"{r['speaker']} ({r['age']}·{r['gender']})"
+            display_name=r['speaker']
+            if r['age']!="未知" and r['gender']!="未知":
+                display_name=f"{r['speaker']} ({r['age']}·{r['gender']})"
             segments.append({
                 "time": f"{int(r['start']//60):02d}:{int(r['start']%60):02d}",
                 "start": r['start'],  # 添加原始秒数
                 "end": r['end'],  # 添加原始秒数
-                # "person": display_name,
-                "person": r['speaker'],  # 原始姓名，用于前端序号递增
+                "person": display_name, # 已经是组合好的显示名称
+                "person_raw": r['speaker'],  # 原始姓名，用于前端序号递增
                 "mood": r['emotion'],
-                "gender": r.get('gender', ''),
-                "age": r.get('age', ''),
+                "gender": r['gender'],
+                "age": r['age'],
                 "level": "MID",
                 "text": r['text']
             })
@@ -148,6 +167,43 @@ def recognize_audio():
         if wav_path and os.path.exists(wav_path):
             os.remove(wav_path)
 
+@app.route('/api/update_speaker', methods=['POST'])
+def update_speaker():
+    """更新说话人信息（姓名、性别、年龄）"""
+    data = request.json
+    old_name = data.get('old_name')
+    new_name = data.get('new_name')
+    gender = data.get('gender')
+    age = data.get('age')
+    
+    if not old_name or not new_name:
+        return jsonify({"success": False, "message": "参数错误"})
+    
+    # 1. 更新 recognizer 的 database
+    if old_name in diary.recognizer.database:
+        speaker_data = diary.recognizer.database.pop(old_name)
+        
+        # 更新性别年龄
+        speaker_data["gender"] = gender
+        speaker_data["age"] = age
+        
+        diary.recognizer.database[new_name] = speaker_data
+        
+        # 更新磁盘上的 .npy 文件
+        old_path = os.path.join(diary.recognizer.db_path, f"{old_name}.npy")
+        new_path = os.path.join(diary.recognizer.db_path, f"{new_name}.npy")
+        
+        save_data = {
+            "embedding": speaker_data["embedding"].numpy(),
+            "gender": gender,
+            "age": age
+        }
+        np.save(new_path, save_data)
+        
+        if os.path.exists(old_path) and old_name != new_name:
+            os.remove(old_path)
+    
+    return jsonify({"success": True, "message": f"{old_name} 已更新为 {new_name}"})
 
 @app.route('/api/rename_speaker', methods=['POST'])
 def rename_speaker():
@@ -169,9 +225,6 @@ def rename_speaker():
         if os.path.exists(old_path):
             os.rename(old_path, new_path)
     
-    # 2. 更新 speakers_db（额外信息）
-    if old_name in speakers_db:
-        speakers_db[new_name] = speakers_db.pop(old_name)
     
     return jsonify({"success": True, "message": f"{old_name} 已改名为 {new_name}"})
 
@@ -186,6 +239,48 @@ def start_parse():
 def stop_parse():
     """停止解析"""
     return jsonify({"success": True})
+
+@app.route('/api/clear_temp_speakers', methods=['POST'])
+def clear_temp_speakers():
+    """清空临时说话人缓存（新会议开始前调用）"""
+    diary.recognizer.clear_temp_speakers()
+    return jsonify({"success": True, "message": "缓存已清空"})
+
+@app.route('/api/promote_temp_speaker', methods=['POST'])
+def promote_temp_speaker():
+    """将临时说话人转为永久注册"""
+    data = request.json
+    temp_name = data.get('temp_name')
+    real_name = data.get('real_name')
+    
+    if not temp_name or not real_name:
+        return jsonify({"success": False, "message": "参数错误"})
+    
+    success, message = diary.recognizer.promote_temp_to_permanent(temp_name, real_name)
+    
+    return jsonify({"success": success, "message": message})
+
+@app.route('/api/delete_speaker', methods=['POST'])
+def delete_speaker():
+    """删除已注册说话人"""
+    data = request.json
+    name = data.get('name')
+    
+    if not name:
+        return jsonify({"success": False, "message": "参数错误"})
+    
+    # 从数据库删除
+    if name in diary.recognizer.database:
+        del diary.recognizer.database[name]
+        
+        # 删除磁盘文件
+        file_path = os.path.join(diary.recognizer.db_path, f"{name}.npy")
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        
+        return jsonify({"success": True, "message": f"{name} 已删除"})
+    else:
+        return jsonify({"success": False, "message": f"说话人 {name} 不存在"})
 
 
 @app.route('/api/export', methods=['POST'])
