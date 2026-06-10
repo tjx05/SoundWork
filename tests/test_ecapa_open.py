@@ -53,7 +53,7 @@ def test_threshold(recognizer, registered_speakers, remaining_speakers, speaker_
     for spk in registered_speakers:
         audios = speaker_audios[spk]
         if len(audios) >= 4:
-            name, score = recognizer.identify(audios[3])
+            name, score, gender, age = recognizer.identify(audios[3])
             same_scores.append(score)
             if name == spk:
                 same_correct += 1
@@ -69,7 +69,7 @@ def test_threshold(recognizer, registered_speakers, remaining_speakers, speaker_
     for spk in remaining_speakers:
         audios = speaker_audios[spk]
         if audios:
-            name, score = recognizer.identify(audios[0])
+            name, score,gender, age = recognizer.identify(audios[0])
             cross_scores.append(score)
             if name is None:
                 cross_correct += 1
@@ -116,7 +116,8 @@ def main():
     # 3. 初始化识别器
     recognizer = SpeakerRecognizer(
         model_path="speaker_checkpoints/best_model.pth",
-        threshold=0.6  # 初始阈值，后面会测试多个
+        threshold=0.6,  # 初始阈值，后面会测试多个
+        db_path="speaker_checkpoints/speaker_db"
     )
     
     # 4. 注册说话人（每人3句话）

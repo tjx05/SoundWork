@@ -8,7 +8,7 @@ from config import config
 from preprocessing.extract_fbank import extract_fbank
 
 class SpeakerRecognizer:
-    def __init__(self,model_path,threshold=0.6,auto_register_unseen=True,temp_update_momentum=0.7):
+    def __init__(self,model_path,threshold=0.6,auto_register_unseen=True,temp_update_momentum=0.7,db_path="speaker_checkpoints/speaker_db"):
         """
         说话人识别器
 
@@ -39,7 +39,7 @@ class SpeakerRecognizer:
         self.model.eval()
 
         # 注册数据库（存储embedding + 性别 + 年龄）
-        self.db_path="speaker_checkpoints/speaker_db"
+        self.db_path=db_path
         os.makedirs(self.db_path,exist_ok=True)
         self.database=self._load_database()
 

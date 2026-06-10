@@ -28,6 +28,7 @@ SoundWork/
 │
 ├── preprocessing            # 数据预处理目录
 │   ├── __init__.py
+│   ├── compute_emotion_bias.py # 计算情感偏置
 │   ├── extract_fbank.py     # 提取FBank特征
 │   ├── preprocess_cremad.py # 预处理CREMA-D数据集
 │   ├── preprocess_timit.py  # 预处理TIMIT数据集
@@ -36,6 +37,7 @@ SoundWork/
 │
 ├── recognition              # 识别/推理模块
 │   ├── __init__.py
+│   ├── emotion_compensated_reco.py # 情感补偿识别模块
 │   ├── speaker_reco.py      # 说话人识别模块
 │   └── wav2vec2_reco.py      # 情感识别模块
 │
@@ -49,7 +51,8 @@ SoundWork/
 │
 ├── tests                    # 测试目录
 │   ├── test_ecapa_open.py   # 测试说话人识别模块
-│   └── test_ecapa_tdnn.py   # 测试ECAPA-TDNN模型的关闭集
+│   ├── test_ecapa_tdnn.py   # 测试ECAPA-TDNN模型的关闭集
+│   └── test_emotion_compensation.py # 测试情感补偿识别模块
 │   
 ├── training                 # 训练目录
 │   ├── train_speaker.py     # 训练说话人识别模型

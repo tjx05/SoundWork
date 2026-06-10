@@ -12,10 +12,6 @@ class Config:
     epochs=50
     lr=0.001
 
-    # 微调参数（CREMA-D）
-    finetune_batch_size=32
-    finetune_epochs=30      # 微调用更少轮数
-    finetune_lr=1e-4        # 微调用更小学习率
 
     device=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

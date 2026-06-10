@@ -4,15 +4,34 @@ import torchaudio
 from models.whisper_asr import WhisperASR
 # from models.diarization import WespeakerDiarizer
 from recognition.speaker_reco import SpeakerRecognizer
+from recognition.emotion_compensated_reco import EmotionCompensatedRecognizer
+from recognition.wav2vec2_reco import Wav2vec2Recognizer
 from config import config
 
 class MeetingDiary:
-    def __init__(self, emotion_recognizer=None):
+    def __init__(self,emotion_recognizer=None,use_compensation=True):
         print("初始化...")
-        self.recognizer=SpeakerRecognizer(
-            model_path="speaker_checkpoints/best_model.pth",
-            threshold=0.52
-        )
+
+        # 加载情感识别器
+        self.emotion_recognizer=emotion_recognizer
+        self.use_compensation=use_compensation
+
+        if self.use_compensation:
+            # 加载情感补偿的说话人识别
+            self.recognizer=EmotionCompensatedRecognizer(
+                model_path="speaker_checkpoints/best_model.pth",
+                threshold=0.52,
+                db_path="speaker_checkpoints/speaker_db",
+                emotion_bias_path="speaker_checkpoints/emotion_bias.pth",
+                emotion_recognizer=self.emotion_recognizer,
+                compensation_strength=0.7,  # 最佳强度
+                use_compensation=True
+            )
+        else:
+            self.recognizer=SpeakerRecognizer(
+                model_path="speaker_checkpoints/best_model.pth",
+                threshold=0.52
+            )
         # self.diarizer=WespeakerDiarizer(
         #     window_dur=1.2,
         #     step_dur=0.5,
@@ -21,8 +40,8 @@ class MeetingDiary:
         # )
         self.asr=WhisperASR("base")
         self.sr=config.sr
-        # 把你的大模型存入实例中
-        self.emotion_recognizer = emotion_recognizer
+        # # 把大模型存入实例中
+        # self.emotion_recognizer = emotion_recognizer
     
     def extract_segment(self,audio_path,start,end):
         """提取音频片段并保存为临时文件"""
@@ -92,34 +111,51 @@ class MeetingDiary:
             else:
                 print(f"  [{start:.1f}s-{end:.1f}s] {speaker} (相似度{score:.3f})")
 
-            # 情感、性别、年龄识别
-            emo="neutral"
-            if self.emotion_recognizer:
-                try:
-                    ai_res = self.emotion_recognizer.predict(temp_path)
-                    emo = ai_res.get("emotion", "neutral")
+            if self.use_compensation:
+                emotion_result=self.recognizer.get_last_emotion()
+                emo=emotion_result.get('emotion', '中性')
+                if gender=="未知":
+                    gender=emotion_result.get('gender','未知')
+                if age=="未知":
+                    age=emotion_result.get('age','未知')
 
-                    # 只有当前性别/年龄是"未知"时，才用情感识别器的值覆盖
-                    if source in ["new_temp", "temp"]:
-                        updated = False
-                        if gender == "未知":
-                            new_gender = ai_res.get("gender", "未知")
-                            if new_gender != "未知":
-                                gender = new_gender
-                                updated = True
-                        if age == "未知":
-                            new_age = ai_res.get("age", "未知")
-                            if new_age != "未知":
-                                age = new_age
-                                updated = True
-                        
-                        # 同步更新 recognizer 中的临时说话人数据
-                        if updated and speaker in self.recognizer.temp_speakers:
-                            self.recognizer.temp_speakers[speaker]["gender"] = gender
-                            self.recognizer.temp_speakers[speaker]["age"] = age
+                # 如果是临时说话人，同步更新 recognizer 中的数据
+                if source in ["new_temp", "temp"] and speaker in self.recognizer.temp_speakers:
+                    if gender != "未知" and self.recognizer.temp_speakers[speaker].get("gender") == "未知":
+                        self.recognizer.temp_speakers[speaker]["gender"] = gender
 
-                except Exception as e:
-                    print(f"大模型识别失败: {e}")
+                    if age != "未知" and self.recognizer.temp_speakers[speaker].get("age") == "未知":
+                        self.recognizer.temp_speakers[speaker]["age"] = age
+
+            else:
+                # 情感、性别、年龄识别
+                emo="neutral"
+                if self.emotion_recognizer:
+                    try:
+                        ai_res = self.emotion_recognizer.predict(temp_path)
+                        emo = ai_res.get("emotion", "neutral")
+
+                        # 只有当前性别/年龄是"未知"时，才用情感识别器的值覆盖
+                        if source in ["new_temp", "temp"]:
+                            updated = False
+                            if gender == "未知":
+                                new_gender = ai_res.get("gender", "未知")
+                                if new_gender != "未知":
+                                    gender = new_gender
+                                    updated = True
+                            if age == "未知":
+                                new_age = ai_res.get("age", "未知")
+                                if new_age != "未知":
+                                    age = new_age
+                                    updated = True
+                            
+                            # 同步更新 recognizer 中的临时说话人数据
+                            if updated and speaker in self.recognizer.temp_speakers:
+                                self.recognizer.temp_speakers[speaker]["gender"] = gender
+                                self.recognizer.temp_speakers[speaker]["age"] = age
+
+                    except Exception as e:
+                        print(f"大模型识别失败: {e}")
 
             # 清理临时文件
             if os.path.exists(temp_path):
