@@ -18,6 +18,11 @@ SoundWork/
 │
 ├── Data  # 数据集目录
 │   ├── CREMA-D
+│   │   ├── processed/
+│   │   │   └── cremad_index.csv
+│   │   └── raw/
+│   │       ├── AudioWAV/
+│   │       └── VideoDemographics.csv
 │   └── TIMIT
 │
 ├── models                   # 模型目录
