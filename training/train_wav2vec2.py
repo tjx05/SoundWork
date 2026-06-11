@@ -20,15 +20,14 @@ def main():
     print(f"正在使用的计算设备: {device}")
 
     # 数据集与路径配置
-    csv_path = "./data/processed/cremad_index.csv111.csv" 
-    audio_dir = "./data/raw/AudioWAV" 
+    csv_path = "./Data/CREMA-D/processed/cremad_index.csv" 
+    audio_dir = "./Data/CREMA-D/raw/AudioWAV" 
     checkpoint_dir = "./emotion_checkpoints"
     output_dir = "./output"
     
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(output_dir, exist_ok=True)
 
-    # 既然有两张 A40，直接把 Batch Size 拉满到 16 或者 32
     BATCH_SIZE = 16          
     LEARNING_RATE = 5e-5     
     EPOCHS = 20              
@@ -46,9 +45,9 @@ def main():
 
     model = Wav2vec2MultiTaskModel()
     
-    # 🔥 工业级多卡并行改造
+    #多卡并行
     if torch.cuda.device_count() > 1:
-        print(f"🔥 霸气！检测到 {torch.cuda.device_count()} 张 GPU，启动 DataParallel 并行训练...")
+        print(f"检测到 {torch.cuda.device_count()} 张 GPU，启动 DataParallel 并行训练...")
         model = nn.DataParallel(model)
         
     model = model.to(device)
@@ -57,12 +56,12 @@ def main():
     criterion_emo = nn.CrossEntropyLoss()
     criterion_gen = nn.CrossEntropyLoss()
     criterion_age = nn.CrossEntropyLoss()
-    # ✨ 核心魔法：无视 XX 标签 (索引为 3)，解决多数类坍缩
-    criterion_int = nn.CrossEntropyLoss(ignore_index=3) 
+    # 无视无效标签，解决多数类坍缩
+    criterion_int = nn.CrossEntropyLoss(ignore_index=-1) 
     
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     
-    # ✨ 新增点 1：引入余弦退火学习率调度器
+    # 引入余弦退火学习率调度器
     # 保证学习率平滑下降至最低 1e-6，防止训练后期在最优解山谷两边反复横跳
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS, eta_min=1e-6)
     
@@ -93,14 +92,14 @@ def main():
             loss_gen = criterion_gen(out_gen, batch_gen)
             loss_age = criterion_age(out_age, batch_age)
             
-            # ✨ 新增点 2：训练集【防 nan 安全锁】
-            # 只有当前 batch 包含非 XX 标签（即不全是3）时，才计算交叉熵，否则给予无梯度 0 损失
-            if (batch_int != 3).any():
+            # 训练集【防 nan 安全锁】
+            # 只有当前 batch 包含真实强度标签（即不全是 -1）时，才计算交叉熵，否则给予无梯度 0 损失
+            if (batch_int != -1).any():
                 loss_int = criterion_int(out_int, batch_int)
             else:
                 loss_int = torch.tensor(0.0, device=device)
             
-            # 🔥 逼迫模型重视强度的学习，将强度权重提升至 1.0
+            
             total_loss = 1.5 * loss_emo + 0.2 * loss_gen + 1.0 * loss_age + 1.0 * loss_int
             
             total_loss.backward()
@@ -117,7 +116,7 @@ def main():
         val_loss = 0.0
         correct_emo, correct_gen, correct_age, correct_int = 0, 0, 0, 0
         total_samples = 0
-        total_valid_int_samples = 0  # ✨ 专门记录不是 XX 的真实强度样本数量
+        total_valid_int_samples = 0  #  专门记录真实的强度样本数量
         
         with torch.no_grad():
             for batch_wave, batch_emo, batch_gen, batch_age, batch_int in val_loader:
@@ -131,8 +130,8 @@ def main():
                 loss_gen = criterion_gen(out_gen, batch_gen)
                 loss_age = criterion_age(out_age, batch_age)
                 
-                # ✨ 新增点 3：验证集【防 nan 安全锁】
-                if (batch_int != 3).any():
+                # 验证集【防 nan 安全锁】
+                if (batch_int != -1).any():
                     v_loss_int = criterion_int(out_int, batch_int)
                 else:
                     v_loss_int = torch.tensor(0.0, device=device)
@@ -150,8 +149,8 @@ def main():
                 correct_age += (preds_age == batch_age).sum().item()
                 total_samples += batch_wave.size(0)
                 
-                # ✨ 核心魔法：只统计真实强度 (非XX) 的判对数量
-                valid_int_mask = (batch_int != 3) 
+                # 只统计真实强度 (非 -1) 的判对数量
+                valid_int_mask = (batch_int != -1) 
                 correct_int += (preds_int[valid_int_mask] == batch_int[valid_int_mask]).sum().item()
                 total_valid_int_samples += valid_int_mask.sum().item()
                 
@@ -160,7 +159,7 @@ def main():
         acc_gen = correct_gen / total_samples * 100
         acc_age = correct_age / total_samples * 100
         
-        # 防止除以 0 报错 (假设这批恰好全是 XX)
+        # 防止除以 0 报错
         acc_int = correct_int / max(total_valid_int_samples, 1) * 100
         
         history["train_loss"].append(avg_train_loss)
@@ -179,9 +178,9 @@ def main():
         
         if avg_acc > best_target_score:
             best_target_score = avg_acc
-            save_path = os.path.join(checkpoint_dir, "best_wav2vec2_model111.pth")
+            save_path = os.path.join(checkpoint_dir, "best_wav2vec2_model.pth")
             
-            # 🔥 脱壳保存：兼容 DataParallel 多卡环境
+            # 兼容 DataParallel 多卡环境
             model_to_save = model.module if hasattr(model, 'module') else model
             torch.save(model_to_save.state_dict(), save_path)
             
@@ -189,7 +188,7 @@ def main():
         else:
             print("")
             
-        # ✨ 新增点 4：驱动学习率更新
+        # 驱动学习率更新
         # 每个 Epoch 训练并验证完后，使其按照余弦退火平滑衰减
         scheduler.step()
             

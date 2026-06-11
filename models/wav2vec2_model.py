@@ -5,10 +5,10 @@ from transformers import Wav2Vec2Model
 class Wav2vec2MultiTaskModel(nn.Module):
     """
     终极四任务全能版: Wav2vec 2.0 语音识别大模型
-    输出: 情绪(6类)、性别(2类)、年龄(3类)、强度(4类)
+    输出: 情绪(6类)、性别(2类)、年龄(3类)、强度(3类，LO/MD/HI，无效标签 -1 在损失函数中屏蔽)
     """
     def __init__(self, model_name="./local_base_model/wav2vec2-base", 
-                 num_emotion=6, num_gender=2, num_age=3, num_intensity=4):
+                 num_emotion=6, num_gender=2, num_age=3, num_intensity=3):
         super(Wav2vec2MultiTaskModel, self).__init__()
         
         print(f"正在从 HuggingFace 加载预训练基座: {model_name} ...")
@@ -30,7 +30,7 @@ class Wav2vec2MultiTaskModel(nn.Module):
         self.age_head = nn.Sequential(
             nn.Linear(hidden_size, 128), nn.ReLU(), nn.Dropout(0.3), nn.Linear(128, num_age)
         )
-        # 4. 强度头 (4分类: LO, MD, HI, XX)
+        # 4. 强度头 ( 3 分类，分别对应 LO, MD, HI)
         self.intensity_head = nn.Sequential(
             nn.Linear(hidden_size, 128), nn.ReLU(), nn.Dropout(0.3), nn.Linear(128, num_intensity)
         )
@@ -56,10 +56,3 @@ class Wav2vec2MultiTaskModel(nn.Module):
         
         return emotion_logits, gender_logits, age_logits, intensity_logits
 
-if __name__ == "__main__":
-    print("正在测试四任务 Wav2vec 2.0 架构...")
-    fake_waveforms = torch.randn(4, 48000) 
-    model = Wav2vec2MultiTaskModel()
-    emo_out, gen_out, age_out, int_out = model(input_values=fake_waveforms)
-    print(f"情绪:{emo_out.shape} | 性别:{gen_out.shape} | 年龄:{age_out.shape} | 强度:{int_out.shape}")
-    print("架构连通性测试通过！")
