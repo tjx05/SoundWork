@@ -1,4 +1,3 @@
-# recognition/emotion_compensated_reco.py
 """
 情感补偿说话人识别器
 基于 CREMA-D 统计的情感偏移，对 embedding 进行补偿

@@ -29,7 +29,8 @@ emotion_cn = {
 # 强度映射
 intensity_map={
     "LO":0, # 弱
-    "HI":1, # 强
+    "MD":1, # 中等
+    "HI":2, # 强
 }
 
 # 性别映射
@@ -71,7 +72,7 @@ for filename in os.listdir(AUDIO_DIR):
         age_label=age_to_label(age)
 
         # 处理强度：如果是XX，标记为None或跳过
-        if intensity_code in ["LO", "HI"]:
+        if intensity_code in ["LO", "MD", "HI"]:
             intensity = intensity_map.get(intensity_code)
         else:
             intensity = -1  # 表示无强度信息
@@ -84,7 +85,7 @@ for filename in os.listdir(AUDIO_DIR):
             "emotion": emotion,
             "emotion_name": emotion_cn[emotion],
             "intensity": intensity,
-            "intensity_name": intensity_code,  # "LO" 或 "HI"
+            "intensity_name": intensity_code,  # "LO", "MD", "HI"
             "gender": gender,
             "gender_name": sex,
             "age": age_label,
