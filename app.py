@@ -16,11 +16,15 @@ os.makedirs(UPLOAD_FOLDER,exist_ok=True)
 os.makedirs("temp",exist_ok=True)  # 用于存放临时音频片段
 
 print("加载大模型...")
-ai_model = Wav2vec2Recognizer(model_path="emotion_checkpoints/best_wav2vec2_model.pth")
+use_compensation=True
+if use_compensation:
+    ai_model = Wav2vec2Recognizer(model_path="emotion_checkpoints/best_wav2vec2_model1.pth")
+else:
+    ai_model = Wav2vec2Recognizer(model_path="emotion_checkpoints/best_wav2vec2_model.pth")
 
 # 初始化日记系统（只加载一次）
 print("初始化会议日记系统...")
-diary=MeetingDiary(emotion_recognizer=ai_model)
+diary=MeetingDiary(emotion_recognizer=ai_model,use_compensation=use_compensation)
 print("初始化完成")
 
 # 存储注册说话人的额外信息（性别、年龄）
@@ -151,7 +155,7 @@ def recognize_audio():
                 "mood": r['emotion'],
                 "gender": r['gender'],
                 "age": r['age'],
-                "level": "MID",
+                "level": r.get('intensity', 'MD'),
                 "text": r['text']
             })
         return jsonify({"success": True, "segments": segments})

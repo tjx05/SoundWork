@@ -24,7 +24,9 @@ class EmotionCompensatedRecognizer(SpeakerRecognizer):
                  compensation_strength=0.7,
                  use_compensation=True,
                  auto_register_unseen=True,
-                 temp_update_momentum=0.7):
+                 temp_update_momentum=0.7,
+                 use_adaptive_strength=True,
+                 strength_mode='wav2vec2'):
         """
         输入:
             model_path: ECAPA-TDNN模型路径
@@ -36,6 +38,8 @@ class EmotionCompensatedRecognizer(SpeakerRecognizer):
             use_compensation: 是否启用情感补偿
             auto_register_unseen: 是否自动注册未注册的说话人
             temp_update_momentum: 临时说话人更新动量,momentum=0.7 表示70%保留历史，30%融合新特征
+            use_adaptive_strength: 是否使用自适应补偿强度
+            strength_mode: 强度模式，'wav2vec2'或'fixed'
         """
         # 调用父类初始化
         super().__init__(
@@ -71,6 +75,36 @@ class EmotionCompensatedRecognizer(SpeakerRecognizer):
             '厌恶': 'disgust', 'disgust': 'disgust',
             '中性': 'neutral', 'neutral': 'neutral'
         }
+
+        self.use_adaptive_strength=use_adaptive_strength
+        self.strength_mode=strength_mode
+
+        # 情感强度 → 补偿强度映射
+        self.strength_map={
+                    'LO': 0.2,   # 弱
+                    'MD': 0.7,   # 中等
+                    'HI': 1.1,   # 强
+                    'XX': 0.7    # 未知
+                }
+
+    def _get_adaptive_strength(self,audio_path,emotion=None):
+        """
+        获取情感强度（0-1）
+        优先使用 Wav2Vec2 的强度输出
+        """
+        if not self.use_adaptive_strength:
+            return self.compensation_strength  # 固定强度
+        
+        if self.strength_mode=='wav2vec2' and self.emotion_recognizer:
+            try:
+                # 使用 Wav2Vec2 的 predict 方法获取强度
+                result = self.emotion_recognizer.predict(audio_path)
+                intensity_str = result.get('intensity','MD')
+                return self.strength_map.get(intensity_str)
+                
+            except Exception as e:
+                print(f"获取强度失败: {e}")
+                return self.compensation_strength
     
     def _extract_embedding(self,audio_path):
         """
@@ -87,6 +121,8 @@ class EmotionCompensatedRecognizer(SpeakerRecognizer):
         emotion='neutral'
         gender='未知'
         age='未知'
+        intensity_str = 'MD'
+        adaptive_strength=self.compensation_strength
 
         if self.emotion_recognizer:
             try:
@@ -95,6 +131,11 @@ class EmotionCompensatedRecognizer(SpeakerRecognizer):
                 emotion=self.emotion_map.get(raw_emotion,'neutral')
                 gender=result.get('gender','未知')
                 age=result.get('age','未知')
+
+                # 获取强度并转换
+                intensity_str=result.get('intensity', 'MD')
+                adaptive_strength = self._get_adaptive_strength(audio_path)
+
             except Exception as e:
                 print(f"情感识别失败: {e}")
 
@@ -102,18 +143,29 @@ class EmotionCompensatedRecognizer(SpeakerRecognizer):
         self._last_emotion_result = {
             'emotion': emotion,
             'gender': gender,
-            'age': age
+            'age': age,
+            'intensity': intensity_str
         }
         
         # 应用补偿（减去情感偏移）
         if emotion in self.emotion_bias:
             bias=self.emotion_bias[emotion]
-            emb=emb-self.compensation_strength*bias
-            emb=emb/emb.norm()
+
+            # 限制范围
+            adaptive_strength = max(0.3, min(1.2, adaptive_strength))
+
+            # 应用补偿
+            emb=emb-adaptive_strength*bias
+            emb=emb/(emb.norm()+1e-8)
         
         return emb
     
     def get_last_emotion(self):
         """获取最后一次识别的情感结果"""
-        return self._last_emotion_result or {'emotion': '中性', 'gender': '未知', 'age': '未知'}
+        return self._last_emotion_result or {
+            'emotion': '中性', 
+            'gender': '未知',
+            'age': '未知',
+            'intensity':'MD'
+        }
     

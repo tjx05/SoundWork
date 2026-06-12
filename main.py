@@ -5,7 +5,7 @@ from models.whisper_asr import WhisperASR
 # from models.diarization import WespeakerDiarizer
 from recognition.speaker_reco import SpeakerRecognizer
 from recognition.emotion_compensated_reco import EmotionCompensatedRecognizer
-from recognition.wav2vec2_reco import Wav2vec2Recognizer
+# from recognition.wav2vec2_reco import Wav2vec2Recognizer
 from config import config
 
 class MeetingDiary:
@@ -114,6 +114,8 @@ class MeetingDiary:
             if self.use_compensation:
                 emotion_result=self.recognizer.get_last_emotion()
                 emo=emotion_result.get('emotion', '中性')
+                intensity=emotion_result.get('intensity', 'MD')
+
                 if gender=="未知":
                     gender=emotion_result.get('gender','未知')
                 if age=="未知":
@@ -166,6 +168,7 @@ class MeetingDiary:
                 "end":end,
                 "speaker":speaker,
                 "emotion":emo,
+                "intensity":intensity,
                 "gender":gender,
                 "age":age,
                 "text":text.strip()

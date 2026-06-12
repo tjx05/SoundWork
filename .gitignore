@@ -14,7 +14,6 @@ ffmpeg-7.0.2-amd64-static/*
 ffmpeg-release-amd64-static.tar.xz
 test_8p.py
 
-record/*
 
 sound.ipynb
 
