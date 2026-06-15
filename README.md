@@ -28,6 +28,7 @@ SoundWork/
 ├── models                   # 模型目录
 │   ├── __init__.py
 │   ├── wav2vec2.py          # wav2vec2模型代码
+│   ├── ecapa_tdnn_vox.py    # ECAPA-TDNN在Vox数据集上训练对应的模型代码
 │   ├── ecapa_tdnn.py        # ECAPA-TDNN模型代码
 │   └── whisper_asr.py       # whisper ASR模型代码
 │
@@ -43,6 +44,7 @@ SoundWork/
 ├── recognition              # 识别/推理模块
 │   ├── __init__.py
 │   ├── emotion_compensated_reco.py # 情感补偿识别模块
+│   ├── speaker_reco_vox.py      # 说话人识别模块在Vox数据集
 │   ├── speaker_reco.py      # 说话人识别模块
 │   └── wav2vec2_reco.py      # 情感识别模块
 │
@@ -51,12 +53,14 @@ SoundWork/
 ├── speaker_checkpoints      # 说话人识别检查点目录
 │   ├── speaker_db           # 已注册的说话人数据库
 │   ├── best_model.pth       # 最佳模型检查点
-│   ├── training_curves.png  # 训练曲线图片
+│   ├── emotion_bias.pth     # 情感偏置计算
+│   ├── pretrain.model       # ecapa-tdnn在vox数据集预训练模型
 │   └── training_history.json  # 训练历史记录
 │
 ├── tests                    # 测试目录
 │   ├── test_ecapa_open.py   # 测试说话人识别模块
 │   ├── test_ecapa_tdnn.py   # 测试ECAPA-TDNN模型的关闭集
+│   ├── test_adaptive_vs_fixed.py   # 测试基线模型与自适应补偿强度与固定补偿的性能
 │   └── test_emotion_compensation.py # 测试情感补偿识别模块
 │   
 ├── training                 # 训练目录
@@ -65,11 +69,15 @@ SoundWork/
 │
 ├── utils                    # 工具目录
 │   ├── __init__.py
+│   ├── visual.py
+│   ├── visual1.py
 │   └── plot_curves.py       # 绘制训练曲线图片
 │ 
 ├── download_model.py        # wav2vec2模型下载脚本
 ├── .gitignore
 ├── config.py
+├── record/                  # 报告对应的图片文件夹
+├── sound.ipynb              # 报告
 └── README.md
 ```
 

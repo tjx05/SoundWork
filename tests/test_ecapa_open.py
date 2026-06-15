@@ -10,6 +10,7 @@ import shutil
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from recognition.speaker_reco import SpeakerRecognizer
+from recognition.speaker_reco_vox import SpeakerRecognizerVox
 from config import config
 
 def set_seed(seed=42):
@@ -92,7 +93,7 @@ def test_threshold(recognizer, registered_speakers, remaining_speakers, speaker_
 
 def main():
     set_seed(42)
-    clear_speaker_db()
+    clear_speaker_db(db_path="speaker_checkpoints/speaker_db1")
     
     print("=" * 70)
     print("ECAPA-TDNN 开放集测试")
@@ -114,10 +115,15 @@ def main():
     print(f"未注册说话人: {len(remaining_speakers)} 人")
     
     # 3. 初始化识别器
-    recognizer = SpeakerRecognizer(
-        model_path="speaker_checkpoints/best_model.pth",
+    # recognizer = SpeakerRecognizer(
+    #     model_path="speaker_checkpoints/best_model.pth",
+    #     threshold=0.6,  # 初始阈值，后面会测试多个
+    #     db_path="speaker_checkpoints/speaker_db1",
+    # )
+    recognizer = SpeakerRecognizerVox(
+        model_path="speaker_checkpoints/pretrain.model",
         threshold=0.6,  # 初始阈值，后面会测试多个
-        db_path="speaker_checkpoints/speaker_db"
+        db_path="speaker_checkpoints/speaker_db1",
     )
     
     # 4. 注册说话人（每人3句话）
@@ -137,7 +143,7 @@ def main():
     print("-" * 70)
     
     results = []
-    thresholds = [0.5, 0.52, 0.55, 0.58, 0.6, 0.62, 0.65, 0.7]
+    thresholds = [0.5, 0.52, 0.55, 0.58, 0.6, 0.62, 0.65, 0.7,0.75,0.8,0.85]
     
     for threshold in thresholds:
         result = test_threshold(recognizer, registered_speakers, remaining_speakers, speaker_audios, threshold)

@@ -20,7 +20,7 @@ class MeetingDiary:
             # 加载情感补偿的说话人识别
             self.recognizer=EmotionCompensatedRecognizer(
                 model_path="speaker_checkpoints/best_model.pth",
-                threshold=0.52,
+                threshold=0.55,
                 db_path="speaker_checkpoints/speaker_db",
                 emotion_bias_path="speaker_checkpoints/emotion_bias.pth",
                 emotion_recognizer=self.emotion_recognizer,
@@ -136,6 +136,7 @@ class MeetingDiary:
                     try:
                         ai_res = self.emotion_recognizer.predict(temp_path)
                         emo = ai_res.get("emotion", "neutral")
+                        intensity = ai_res.get("intensity", "MD")
 
                         # 只有当前性别/年龄是"未知"时，才用情感识别器的值覆盖
                         if source in ["new_temp", "temp"]:

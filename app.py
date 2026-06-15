@@ -16,11 +16,8 @@ os.makedirs(UPLOAD_FOLDER,exist_ok=True)
 os.makedirs("temp",exist_ok=True)  # 用于存放临时音频片段
 
 print("加载大模型...")
-use_compensation=True
-if use_compensation:
-    ai_model = Wav2vec2Recognizer(model_path="emotion_checkpoints/best_wav2vec2_model1.pth")
-else:
-    ai_model = Wav2vec2Recognizer(model_path="emotion_checkpoints/best_wav2vec2_model.pth")
+use_compensation=False
+ai_model = Wav2vec2Recognizer(model_path="emotion_checkpoints/best_wav2vec2_model1.pth")
 
 # 初始化日记系统（只加载一次）
 print("初始化会议日记系统...")

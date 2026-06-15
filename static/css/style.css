@@ -266,11 +266,34 @@ body {
   flex: 1;
   background: var(--light);
   border-radius: 6px;
-  padding: 10px;
+  padding: 12px;
   font-size: 12px;
-  white-space: pre-line;
+  /* 核心样式优化 */
+  white-space: pre-wrap; /* 保留换行 + 长文本自动换行，杜绝横向溢出 */
+  line-height: 1.8; /* 加大行高，提升呼吸感 */
   min-height: 0;
   overflow-y: auto;
+  /* 条目分隔：利用换行间距 + 底部虚线分割 */
+}
+/* 新增：匹配日记条目格式，单独美化单条记录 */
+.diary-box > div {
+  display: block;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px dashed #dde3e0; /* 虚线分隔每条对话 */
+  border-radius: 4px;
+}
+/* 高亮时间标签，强化第一层级 */
+.diary-box .time-tag {
+  color: #4a90e2;
+  font-weight: 600;
+  margin-right: 6px;
+}
+/* 高亮发言人+情绪标签，区分第二层级 */
+.diary-box .info-tag {
+  color: #67b99a;
+  font-weight: 500;
+  margin: 0 6px;
 }
 .down-btn {
   width: 100%;

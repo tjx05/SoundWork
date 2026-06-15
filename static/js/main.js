@@ -49,7 +49,7 @@ function generateDiary() {
   let txt = '【多人会议结构化日记】\n';
   txt += '——————————————\n';
   parseData.forEach(d => {
-    txt += `[${d.time}] ${d.person} [${d.mood}]：${d.text}\n`;
+    txt += `[${d.time}] ${d.person} [${d.mood}]：${d.text}\n\n`;
   });
   diaryBox.innerText = txt;
   diaryBox.scrollTop = diaryBox.scrollHeight;
@@ -972,3 +972,8 @@ langSwitch.onclick = function() {
 
 // 初始化
 loadSpeakers();
+
+// 页面刷新时清空临时说话人
+window.addEventListener('beforeunload', () => {
+    fetch('/api/clear_temp_speakers', { method: 'POST', keepalive: true });
+});

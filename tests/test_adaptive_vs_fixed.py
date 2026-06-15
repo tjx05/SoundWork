@@ -1,7 +1,7 @@
 # find_mapping_by_wav2vec2_identify.py
 """
 用 Wav2Vec2 预测的强度，找到最佳补偿系数
-使用 identify（固定数据库，不自动注册）
+对比：VoxCeleb 模型 vs 你的模型
 """
 
 import torch
@@ -15,17 +15,43 @@ from tqdm import tqdm
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from recognition.speaker_reco import SpeakerRecognizer
+from recognition.speaker_reco_vox import SpeakerRecognizerVox
 from recognition.wav2vec2_reco import Wav2vec2Recognizer
 from config import config
+
+
+def test_baseline(recognizer, test_tasks):
+    """测试无补偿 baseline"""
+    correct = 0
+    total = 0
+    
+    for task in tqdm(test_tasks, desc="Baseline"):
+        audio_path = task['audio_path']
+        expected_name = task['expected_name']
+        
+        emb = recognizer._extract_embedding(audio_path)
+        
+        best_name = None
+        best_score = -1
+        for name, data in recognizer.database.items():
+            db_emb = data["embedding"]
+            score = torch.dot(emb, db_emb) / (emb.norm() * db_emb.norm() + 1e-8)
+            score = score.item()
+            if score > best_score:
+                best_score = score
+                best_name = name
+        
+        if best_score > recognizer.threshold and best_name == expected_name:
+            correct += 1
+        total += 1
+    
+    return correct / total * 100 if total > 0 else 0
 
 
 def test_mapping(lo_factor, md_factor, hi_factor, 
                  recognizer, emotion_bias, test_tasks, 
                  emotion_recognizer, base_strength=0.7):
-    """
-    测试一组强度因子映射的效果
-    使用 identify（固定数据库，不自动注册）
-    """
+    """测试一组强度因子映射的效果"""
     intensity_to_factor = {
         'LO': lo_factor,
         'MD': md_factor,
@@ -41,7 +67,6 @@ def test_mapping(lo_factor, md_factor, hi_factor,
         expected_name = task['expected_name']
         emotion = task['emotion']
         
-        # 用 Wav2Vec2 预测强度
         try:
             result = emotion_recognizer.predict(audio_path)
             intensity = result.get('intensity', 'MD')
@@ -50,7 +75,6 @@ def test_mapping(lo_factor, md_factor, hi_factor,
         
         factor = intensity_to_factor.get(intensity, 0.7)
         
-        # 提取embedding
         emb_original = recognizer._extract_embedding(audio_path)
         
         if emotion in emotion_bias:
@@ -65,7 +89,6 @@ def test_mapping(lo_factor, md_factor, hi_factor,
         else:
             emb_enhanced = emb_original
         
-        # ========== 使用 identify（不自动注册） ==========
         best_name = None
         best_score = -1
         for name, data in recognizer.database.items():
@@ -83,30 +106,18 @@ def test_mapping(lo_factor, md_factor, hi_factor,
     return correct / total * 100 if total > 0 else 0
 
 
-def main():
-    device = config.device
-    print("=" * 70)
-    print("用 Wav2Vec2 预测的强度，寻找最佳补偿因子")
-    print("使用 identify（固定数据库，不自动注册）")
-    print("=" * 70)
-    
-    # 1. 加载数据
-    print("\n加载 CREMA-D 数据...")
-    df = pd.read_csv("Data/CREMA-D/processed/cremad_index.csv")
-    
-    # 2. 注册说话人
-    print("\n注册阶段...")
+def setup_recognizer_and_db(recognizer_class, model_path, threshold, db_path, df):
+    """通用注册函数"""
     import shutil
     
-    db_path = "speaker_checkpoints/speaker_db_test"
     if os.path.exists(db_path):
         shutil.rmtree(db_path)
     os.makedirs(db_path, exist_ok=True)
     
-    recognizer = SpeakerRecognizer(
-        model_path="speaker_checkpoints/best_model.pth",
-        threshold=0.52,
-        auto_register_unseen=False,  # 关闭自动注册
+    recognizer = recognizer_class(
+        model_path=model_path,
+        threshold=threshold,
+        auto_register_unseen=False,
         db_path=db_path
     )
     
@@ -124,19 +135,21 @@ def main():
             recognizer.enroll(f"Actor_{actor}", audios[:3])
     
     print(f"注册完成，共 {len(recognizer.database)} 人")
+    return recognizer
+
+
+def main():
+    device = config.device
+    print("=" * 70)
+    print("对比测试：VoxCeleb 模型 vs 你的模型")
+    print("用 Wav2Vec2 预测强度，寻找最佳补偿因子")
+    print("=" * 70)
     
-    # 3. 加载情感偏移
-    print("\n加载情感偏移...")
-    emotion_bias = torch.load("speaker_checkpoints/emotion_bias.pth", map_location='cpu')
+    # 1. 加载数据
+    print("\n加载 CREMA-D 数据...")
+    df = pd.read_csv("Data/CREMA-D/processed/cremad_index.csv")
     
-    # 4. 加载 Wav2Vec2
-    print("\n加载 Wav2Vec2 识别器...")
-    emotion_recognizer = Wav2vec2Recognizer(
-        model_path="emotion_checkpoints/best_wav2vec2_model1.pth"
-    )
-    
-    # 5. 准备测试任务
-    print("\n准备测试任务...")
+    # 准备测试任务
     test_tasks = []
     for _, row in df.iterrows():
         actor = row['actor_id']
@@ -149,60 +162,77 @@ def main():
                 'emotion': emotion,
                 'audio_path': audio_path
             })
-    
     print(f"测试任务数: {len(test_tasks)}")
     
-    # 6. 先测试无补偿 baseline
+    # 2. 加载 Wav2Vec2
+    print("\n加载 Wav2Vec2 识别器...")
+    emotion_recognizer = Wav2vec2Recognizer(
+        model_path="emotion_checkpoints/best_wav2vec2_model1.pth"
+    )
+    
+    # ============================================================
+    # 第一部分：测试 VoxCeleb 模型
+    # ============================================================
     print("\n" + "=" * 70)
-    print("测试无补偿 baseline")
+    print("第一部分：VoxCeleb 预训练模型")
     print("=" * 70)
     
-    baseline_correct = 0
-    for task in tqdm(test_tasks[:500], desc="Baseline"):
-        audio_path = task['audio_path']
-        expected_name = task['expected_name']
-        
-        emb_original = recognizer._extract_embedding(audio_path)
-        
-        best_name = None
-        best_score = -1
-        for name, data in recognizer.database.items():
-            db_emb = data["embedding"]
-            score = torch.dot(emb_original, db_emb) / (emb_original.norm() * db_emb.norm() + 1e-8)
-            score = score.item()
-            if score > best_score:
-                best_score = score
-                best_name = name
-        
-        if best_score > recognizer.threshold and best_name == expected_name:
-            baseline_correct += 1
+    # 注册 Vox 模型
+    recognizer_vox = setup_recognizer_and_db(
+        recognizer_class=SpeakerRecognizerVox,
+        model_path="speaker_checkpoints/pretrain.model",
+        threshold=0.6,
+        db_path="speaker_checkpoints/speaker_db_vox_test",
+        df=df
+    )
     
-    baseline_acc = baseline_correct / len(test_tasks[:500]) * 100
-    print(f"无补偿准确率: {baseline_acc:.2f}%")
+    # 测试 Vox 模型无补偿
+    print("\n测试 VoxCeleb 模型无补偿 baseline...")
+    vox_baseline = test_baseline(recognizer_vox, test_tasks)
+    print(f"VoxCeleb 无补偿准确率: {vox_baseline:.2f}%")
     
-    # 7. 测试固定强度
+    # ============================================================
+    # 第二部分：测试你的模型
+    # ============================================================
     print("\n" + "=" * 70)
-    print("测试固定强度 (factor=0.7)")
+    print("第二部分：你的 ECAPA-TDNN 模型")
     print("=" * 70)
     
-    fixed_acc = test_mapping(0.7, 0.7, 0.7, recognizer, emotion_bias, 
-                              test_tasks[:500], emotion_recognizer, base_strength=0.7)
+    # 注册你的模型
+    recognizer_your = setup_recognizer_and_db(
+        recognizer_class=SpeakerRecognizer,
+        model_path="speaker_checkpoints/best_model.pth",
+        threshold=0.52,
+        db_path="speaker_checkpoints/speaker_db_your_test",
+        df=df
+    )
+    
+    # 加载情感偏移
+    print("\n加载情感偏移...")
+    emotion_bias = torch.load("speaker_checkpoints/emotion_bias.pth", map_location='cpu')
+    
+    # 测试无补偿
+    print("\n测试无补偿 baseline...")
+    your_baseline = test_baseline(recognizer_your, test_tasks)
+    print(f"你的模型无补偿准确率: {your_baseline:.2f}%")
+    
+    # 测试固定强度
+    print("\n测试固定强度 (factor=0.7)...")
+    fixed_acc = test_mapping(0.7, 0.7, 0.7, recognizer_your, emotion_bias, 
+                              test_tasks, emotion_recognizer, base_strength=0.7)
     print(f"固定强度准确率: {fixed_acc:.2f}%")
-    print(f"相比 baseline 提升: +{fixed_acc - baseline_acc:.2f}%")
+    print(f"相比 baseline 提升: +{fixed_acc - your_baseline:.2f}%")
     
-    # 8. 网格搜索
+    # 网格搜索
     print("\n" + "=" * 70)
-    print("网格搜索最佳强度因子")
+    print("网格搜索最佳强度因子（你的模型）")
     print("=" * 70)
     
-    # 搜索范围
-    lo_factors = [0.2, 0.3, 0.5, 0.7, 0.9]
-    md_factors = [0.3, 0.5, 0.7, 0.9, 1.0, 1.1]
-    hi_factors = [0.7, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5]
+    lo_factors = [0.2, 0.3, 0.5, 0.7]
+    md_factors = [0.5, 0.7, 0.9]
+    hi_factors = [0.9, 1.1]
     
     results = []
-    test_tasks_subset = test_tasks[:500]  # 用500样本
-    
     total_combos = len(lo_factors) * len(md_factors) * len(hi_factors)
     combo_count = 0
     
@@ -212,53 +242,40 @@ def main():
                 combo_count += 1
                 print(f"\n[{combo_count}/{total_combos}] 测试 LO={lo}, MD={md}, HI={hi}")
                 
-                acc = test_mapping(lo, md, hi, recognizer, emotion_bias, 
-                                   test_tasks_subset, emotion_recognizer, base_strength=0.7)
+                acc = test_mapping(lo, md, hi, recognizer_your, emotion_bias, 
+                                   test_tasks, emotion_recognizer, base_strength=0.7)
                 
                 results.append({
                     'LO': lo, 'MD': md, 'HI': hi,
                     'accuracy': acc
                 })
-                print(f"  准确率: {acc:.2f}% (vs baseline: +{acc - baseline_acc:.2f}%, vs fixed: +{acc - fixed_acc:.2f}%)")
+                print(f"  准确率: {acc:.2f}% (vs baseline: +{acc - your_baseline:.2f}%, vs fixed: +{acc - fixed_acc:.2f}%)")
     
-    # 9. 找最佳
-    print("\n" + "=" * 70)
-    print("搜索结果")
-    print("=" * 70)
-    
+    # 找最佳
     best = max(results, key=lambda x: x['accuracy'])
-    print(f"\n最佳强度因子:")
-    print(f"  LO (预测为弱强度) → {best['LO']}")
-    print(f"  MD (预测为中等强度) → {best['MD']}")
-    print(f"  HI (预测为高强度) → {best['HI']}")
-    print(f"  准确率: {best['accuracy']:.2f}%")
-    print(f"  相比 baseline 提升: +{best['accuracy'] - baseline_acc:.2f}%")
-    print(f"  相比固定强度提升: +{best['accuracy'] - fixed_acc:.2f}%")
     
-    # 10. 对比 identify_or_register 的结果
     print("\n" + "=" * 70)
-    print("重要对比")
+    print("最终结果汇总")
     print("=" * 70)
     print(f"""
-    identify 模式（固定数据库）:
-       无补偿: {baseline_acc:.1f}%
+    【VoxCeleb 模型】
+       无补偿: {vox_baseline:.1f}%
+    
+    【你的模型】
+       无补偿: {your_baseline:.1f}%
        固定强度: {fixed_acc:.1f}%
        最佳自适应: {best['accuracy']:.1f}%
-    
-    identify_or_register 模式（动态注册）:
-       之前测试结果: 约 44%
-    
-    差异原因:
-       identify 模式: 只能用中性语音注册，情绪语音匹配差
-       identify_or_register 模式: 情绪语音也能被注册，匹配更好
+       最佳因子: LO={best['LO']}, MD={best['MD']}, HI={best['HI']}
+       相比无补偿提升: +{best['accuracy'] - your_baseline:.1f}%
     """)
     
-    # 11. 保存结果
+    # 保存结果
     import json
     save_path = "speaker_checkpoints/wav2vec2_intensity_mapping_identify.json"
     with open(save_path, "w") as f:
         json.dump({
-            'baseline_accuracy': baseline_acc,
+            'vox_baseline': vox_baseline,
+            'your_baseline': your_baseline,
             'fixed_accuracy': fixed_acc,
             'best_mapping': {'LO': best['LO'], 'MD': best['MD'], 'HI': best['HI']},
             'best_accuracy': best['accuracy'],
